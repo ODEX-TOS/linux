@@ -1107,6 +1107,10 @@ static int iwl_pci_probe(struct pci_dev *pdev, const struct pci_device_id *ent)
 			cfg = &iwl9560_2ac_cfg_qu_c0_jf_b0;
 		else if (cfg == &iwl9560_2ac_160_cfg_qu_b0_jf_b0)
 			cfg = &iwl9560_2ac_160_cfg_qu_c0_jf_b0;
+		else if (cfg == &killer1650s_2ax_cfg_qu_b0_hr_b0)
+			cfg = &killer1650s_2ax_cfg_qu_c0_hr_b0;
+		else if (cfg == &killer1650i_2ax_cfg_qu_b0_hr_b0)
+			cfg = &killer1650i_2ax_cfg_qu_c0_hr_b0;
 	}
 
 	/* same thing for QuZ... */
