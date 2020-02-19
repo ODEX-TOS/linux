@@ -119,32 +119,64 @@ i915_gem_get_aperture_ioctl(struct drm_device *dev, void *data,
 int i915_gem_object_unbind(struct drm_i915_gem_object *obj,
 			   unsigned long flags)
 {
-	struct i915_vma *vma;
+	struct intel_runtime_pm *rpm = &to_i915(obj->base.dev)->runtime_pm;
 	LIST_HEAD(still_in_list);
-	int ret = 0;
+	intel_wakeref_t wakeref;
+	struct i915_vma *vma;
+	int ret;
 
+	if (!atomic_read(&obj->bind_count))
+		return 0;
+
+	/*
+	 * As some machines use ACPI to handle runtime-resume callbacks, and
+	 * ACPI is quite kmalloc happy, we cannot resume beneath the vm->mutex
+	 * as they are required by the shrinker. Ergo, we wake the device up
+	 * first just in case.
+	 */
+	wakeref = intel_runtime_pm_get(rpm);
+
+try_again:
+	ret = 0;
 	spin_lock(&obj->vma.lock);
 	while (!ret && (vma = list_first_entry_or_null(&obj->vma.list,
 						       struct i915_vma,
 						       obj_link))) {
 		struct i915_address_space *vm = vma->vm;
 
-		ret = -EBUSY;
+		list_move_tail(&vma->obj_link, &still_in_list);
+		if (!i915_vma_is_bound(vma, I915_VMA_BIND_MASK))
+			continue;
+
+		ret = -EAGAIN;
 		if (!i915_vm_tryopen(vm))
 			break;
 
-		list_move_tail(&vma->obj_link, &still_in_list);
+		/* Prevent vma being freed by i915_vma_parked as we unbind */
+		vma = __i915_vma_get(vma);
 		spin_unlock(&obj->vma.lock);
 
-		if (flags & I915_GEM_OBJECT_UNBIND_ACTIVE ||
-		    !i915_vma_is_active(vma))
-			ret = i915_vma_unbind(vma);
+		if (vma) {
+			ret = -EBUSY;
+			if (flags & I915_GEM_OBJECT_UNBIND_ACTIVE ||
+			    !i915_vma_is_active(vma))
+				ret = i915_vma_unbind(vma);
+
+			__i915_vma_put(vma);
+		}
 
 		i915_vm_close(vm);
 		spin_lock(&obj->vma.lock);
 	}
-	list_splice(&still_in_list, &obj->vma.list);
+	list_splice_init(&still_in_list, &obj->vma.list);
 	spin_unlock(&obj->vma.lock);
+
+	if (ret == -EAGAIN && flags & I915_GEM_OBJECT_UNBIND_ACTIVE) {
+		rcu_barrier(); /* flush the i915_vm_release() */
+		goto try_again;
+	}
+
+	intel_runtime_pm_put(rpm, wakeref);
 
 	return ret;
 }
@@ -154,7 +186,7 @@ i915_gem_phys_pwrite(struct drm_i915_gem_object *obj,
 		     struct drm_i915_gem_pwrite *args,
 		     struct drm_file *file)
 {
-	void *vaddr = obj->phys_handle->vaddr + args->offset;
+	void *vaddr = sg_page(obj->mm.pages->sgl) + args->offset;
 	char __user *user_data = u64_to_user_ptr(args->data_ptr);
 
 	/*
@@ -800,10 +832,10 @@ i915_gem_pwrite_ioctl(struct drm_device *dev, void *data,
 		ret = i915_gem_gtt_pwrite_fast(obj, args);
 
 	if (ret == -EFAULT || ret == -ENOSPC) {
-		if (obj->phys_handle)
-			ret = i915_gem_phys_pwrite(obj, args, file);
-		else
+		if (i915_gem_object_has_struct_page(obj))
 			ret = i915_gem_shmem_pwrite(obj, args);
+		else
+			ret = i915_gem_phys_pwrite(obj, args, file);
 	}
 
 	i915_gem_object_unpin_pages(obj);
