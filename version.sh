@@ -9,4 +9,9 @@ PATCHLEVEL="$(grep -E "^PATCHLEVEL" "$INPUT" | cut -d= -f2 | sed -e 's/^[[:space
 SUBLEVEL="$(grep -E "^SUBLEVEL" "$INPUT" | cut -d= -f2 | sed -e 's/^[[:space:]]*//')"
 EXTRAVERSION="$(grep -E "^EXTRAVERSION" "$INPUT" | cut -d= -f2 | sed -e 's/^[[:space:]]*//' | tr '-' '.')"
 
-echo -e "$VERSION.$PATCHLEVEL.$SUBLEVEL$EXTRAVERSION" > "$OUT"
+ORIGINAL="$(cat $OUT)"
+UPDATED="$VERSION.$PATCHLEVEL.$SUBLEVEL$EXTRAVERSION"
+echo -e "$UPDATED" > "$OUT"
+
+echo -e "\e[91m[ORIGINAL]\e[39m $ORIGINAL"
+echo -e "\e[93m[UPDATED]\e[39m $UPDATED"
