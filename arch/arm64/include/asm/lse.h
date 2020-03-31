@@ -8,8 +8,6 @@
 
 #define __LSE_PREAMBLE	".arch_extension lse\n"
 
-#define __LSE_PREAMBLE ".arch_extension lse\n"
-
 #include <linux/compiler_types.h>
 #include <linux/export.h>
 #include <linux/jump_label.h>
@@ -24,14 +22,15 @@ extern struct static_key_false arm64_const_caps_ready;
 static inline bool system_uses_lse_atomics(void)
 {
 	return (static_branch_likely(&arm64_const_caps_ready)) &&
-	       static_branch_likely(&cpu_hwcap_keys[ARM64_HAS_LSE_ATOMICS]);
+		static_branch_likely(&cpu_hwcap_keys[ARM64_HAS_LSE_ATOMICS]);
 }
 
-#define __lse_ll_sc_body(op, ...)                                              \
-	({                                                                     \
-		system_uses_lse_atomics() ? __lse_##op(__VA_ARGS__) :          \
-					    __ll_sc_##op(__VA_ARGS__);         \
-	})
+#define __lse_ll_sc_body(op, ...)					\
+({									\
+	system_uses_lse_atomics() ?					\
+		__lse_##op(__VA_ARGS__) :				\
+		__ll_sc_##op(__VA_ARGS__);				\
+})
 
 /* In-line patching at runtime */
 #define ARM64_LSE_ATOMIC_INSN(llsc, lse)				\
@@ -39,14 +38,11 @@ static inline bool system_uses_lse_atomics(void)
 
 #else	/* CONFIG_ARM64_LSE_ATOMICS */
 
-static inline bool system_uses_lse_atomics(void)
-{
-	return false;
-}
+static inline bool system_uses_lse_atomics(void) { return false; }
 
-#define __lse_ll_sc_body(op, ...) __ll_sc_##op(__VA_ARGS__)
+#define __lse_ll_sc_body(op, ...)		__ll_sc_##op(__VA_ARGS__)
 
-#define ARM64_LSE_ATOMIC_INSN(llsc, lse) llsc
+#define ARM64_LSE_ATOMIC_INSN(llsc, lse)	llsc
 
 #endif	/* CONFIG_ARM64_LSE_ATOMICS */
 #endif	/* __ASM_LSE_H */

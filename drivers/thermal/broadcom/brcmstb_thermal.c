@@ -141,7 +141,7 @@ static inline u32 avs_tmon_temp_to_code(struct brcmstb_thermal_priv *priv,
 	if (temp < AVS_TMON_TEMP_MIN)
 		return AVS_TMON_TEMP_MAX;	/* Maximum code value */
 
-	if (temp >= AVS_TMON_TEMP_OFFSET)
+	if (temp >= offset)
 		return 0;	/* Minimum code value */
 
 	if (low)

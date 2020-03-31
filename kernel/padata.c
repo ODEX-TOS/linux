@@ -514,9 +514,7 @@ static int padata_replace(struct padata_instance *pinst)
 	struct padata_shell *ps;
 	int err;
 
-	pd_new = padata_alloc_pd(ps);
-	if (!pd_new)
-		return -ENOMEM;
+	pinst->flags |= PADATA_RESET;
 
 	cpumask_and(pinst->rcpumask.pcpu, pinst->cpumask.pcpu,
 		    cpu_online_mask);

@@ -809,7 +809,6 @@ static inline bool dev_has_sync_state(struct device *dev)
 	return false;
 }
 
-
 /*
  * High level routines for use by the bus drivers
  */

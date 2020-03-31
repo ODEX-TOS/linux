@@ -137,23 +137,6 @@ struct padata_shell {
 };
 
 /**
- * struct padata_shell - Wrapper around struct parallel_data, its
- * purpose is to allow the underlying control structure to be replaced
- * on the fly using RCU.
- *
- * @pinst: padat instance.
- * @pd: Actual parallel_data structure which may be substituted on the fly.
- * @opd: Pointer to old pd to be freed by padata_replace.
- * @list: List entry in padata_instance list.
- */
-struct padata_shell {
-	struct padata_instance		*pinst;
-	struct parallel_data __rcu	*pd;
-	struct parallel_data		*opd;
-	struct list_head		list;
-};
-
-/**
  * struct padata_instance - The overall control structure.
  *
  * @node: Used by CPU hotplug.

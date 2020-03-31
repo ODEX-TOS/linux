@@ -417,8 +417,6 @@ err:
 
 /* Journalling */
 
-#define nr_to_fifo_front(p, front_p, mask)	(((p) - (front_p)) & (mask))
-
 static void btree_flush_write(struct cache_set *c)
 {
 	struct btree *b, *t, *btree_nodes[BTREE_FLUSH_NR];

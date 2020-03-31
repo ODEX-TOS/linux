@@ -2444,10 +2444,7 @@ static ssize_t register_bcache(struct kobject *k, struct kobj_attribute *attr,
 
 done:
 	kfree(sb);
-out_free_path:
 	kfree(path);
-	path = NULL;
-out_module_put:
 	module_put(THIS_MODULE);
 	return size;
 

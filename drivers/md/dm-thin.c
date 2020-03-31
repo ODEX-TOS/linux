@@ -3582,9 +3582,6 @@ static int pool_preresume(struct dm_target *ti)
 	if (r)
 		return r;
 
-	dm_pool_register_pre_commit_callback(pool->pmd,
-					     metadata_pre_commit_callback, pt);
-
 	r = maybe_resize_data_dev(ti, &need_commit1);
 	if (r)
 		return r;
