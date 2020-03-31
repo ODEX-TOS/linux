@@ -4,7 +4,9 @@
 
 #include <asm/atomic_ll_sc.h>
 
-#if defined(CONFIG_AS_LSE) && defined(CONFIG_ARM64_LSE_ATOMICS)
+#ifdef CONFIG_ARM64_LSE_ATOMICS
+
+#define __LSE_PREAMBLE	".arch_extension lse\n"
 
 #define __LSE_PREAMBLE ".arch_extension lse\n"
 
@@ -32,10 +34,10 @@ static inline bool system_uses_lse_atomics(void)
 	})
 
 /* In-line patching at runtime */
-#define ARM64_LSE_ATOMIC_INSN(llsc, lse)                                       \
+#define ARM64_LSE_ATOMIC_INSN(llsc, lse)				\
 	ALTERNATIVE(llsc, __LSE_PREAMBLE lse, ARM64_HAS_LSE_ATOMICS)
 
-#else /* CONFIG_AS_LSE && CONFIG_ARM64_LSE_ATOMICS */
+#else	/* CONFIG_ARM64_LSE_ATOMICS */
 
 static inline bool system_uses_lse_atomics(void)
 {
@@ -46,5 +48,5 @@ static inline bool system_uses_lse_atomics(void)
 
 #define ARM64_LSE_ATOMIC_INSN(llsc, lse) llsc
 
-#endif /* CONFIG_AS_LSE && CONFIG_ARM64_LSE_ATOMICS */
-#endif /* __ASM_LSE_H */
+#endif	/* CONFIG_ARM64_LSE_ATOMICS */
+#endif	/* __ASM_LSE_H */
