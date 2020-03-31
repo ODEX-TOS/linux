@@ -809,16 +809,6 @@ static inline bool dev_has_sync_state(struct device *dev)
 	return false;
 }
 
-static inline bool dev_has_sync_state(struct device *dev)
-{
-	if (!dev)
-		return false;
-	if (dev->driver && dev->driver->sync_state)
-		return true;
-	if (dev->bus && dev->bus->sync_state)
-		return true;
-	return false;
-}
 
 /*
  * High level routines for use by the bus drivers
