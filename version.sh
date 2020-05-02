@@ -11,6 +11,7 @@ EXTRAVERSION="$(grep -E "^EXTRAVERSION" "$INPUT" | cut -d= -f2 | sed -e 's/^[[:s
 
 ORIGINAL="$(cat $OUT)"
 UPDATED="$VERSION.$PATCHLEVEL.$SUBLEVEL$EXTRAVERSION"
+UPDATED=$(printf "%s" "$UPDATED" | sed -r 's/\s+//g')
 echo -e "$UPDATED" > "$OUT"
 
 echo -e "\e[91m[ORIGINAL]\e[39m $ORIGINAL"
