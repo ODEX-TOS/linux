@@ -317,42 +317,6 @@ static const struct tcs_request *get_req_from_tcs(struct rsc_drv *drv,
 	return NULL;
 }
 
-static void __tcs_set_trigger(struct rsc_drv *drv, int tcs_id, bool trigger)
-{
-	u32 enable;
-
-	/*
-	 * HW req: Clear the DRV_CONTROL and enable TCS again
-	 * While clearing ensure that the AMC mode trigger is cleared
-	 * and then the mode enable is cleared.
-	 */
-	enable = read_tcs_reg(drv, RSC_DRV_CONTROL, tcs_id, 0);
-	enable &= ~TCS_AMC_MODE_TRIGGER;
-	write_tcs_reg_sync(drv, RSC_DRV_CONTROL, tcs_id, enable);
-	enable &= ~TCS_AMC_MODE_ENABLE;
-	write_tcs_reg_sync(drv, RSC_DRV_CONTROL, tcs_id, enable);
-
-	if (trigger) {
-		/* Enable the AMC mode on the TCS and then trigger the TCS */
-		enable = TCS_AMC_MODE_ENABLE;
-		write_tcs_reg_sync(drv, RSC_DRV_CONTROL, tcs_id, enable);
-		enable |= TCS_AMC_MODE_TRIGGER;
-		write_tcs_reg_sync(drv, RSC_DRV_CONTROL, tcs_id, enable);
-	}
-}
-
-static void enable_tcs_irq(struct rsc_drv *drv, int tcs_id, bool enable)
-{
-	u32 data;
-
-	data = read_tcs_reg(drv, RSC_DRV_IRQ_ENABLE, 0, 0);
-	if (enable)
-		data |= BIT(tcs_id);
-	else
-		data &= ~BIT(tcs_id);
-	write_tcs_reg(drv, RSC_DRV_IRQ_ENABLE, 0, data);
-}
-
 /**
  * __tcs_set_trigger() - Start xfer on a TCS or unset trigger on a borrowed TCS
  * @drv:     The controller.

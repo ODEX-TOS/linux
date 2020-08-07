@@ -283,15 +283,6 @@ static const struct mt_class mt_classes[] = {
 			MT_QUIRK_WIN8_PTP_BUTTONS |
 			MT_QUIRK_FORCE_MULTI_INPUT,
 		.export_all_inputs = true },
-	{ .name = MT_CLS_WIN_8_FORCE_MULTI_INPUT,
-		.quirks = MT_QUIRK_ALWAYS_VALID |
-			MT_QUIRK_IGNORE_DUPLICATES |
-			MT_QUIRK_HOVERING |
-			MT_QUIRK_CONTACT_CNT_ACCURATE |
-			MT_QUIRK_STICKY_FINGERS |
-			MT_QUIRK_WIN8_PTP_BUTTONS |
-			MT_QUIRK_FORCE_MULTI_INPUT,
-		.export_all_inputs = true },
 
 	/*
 	 * vendor specific classes

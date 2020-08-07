@@ -203,17 +203,6 @@ static const struct dmi_system_id dw_i2c_hwmon_class_dmi[] = {
 	{ } /* terminate list */
 };
 
-static const struct dmi_system_id dw_i2c_hwmon_class_dmi[] = {
-	{
-		.ident = "Qtechnology QT5222",
-		.matches = {
-			DMI_MATCH(DMI_SYS_VENDOR, "Qtechnology"),
-			DMI_MATCH(DMI_PRODUCT_NAME, "QT5222"),
-		},
-	},
-	{ } /* terminate list */
-};
-
 static int dw_i2c_plat_probe(struct platform_device *pdev)
 {
 	struct dw_i2c_platform_data *pdata = dev_get_platdata(&pdev->dev);

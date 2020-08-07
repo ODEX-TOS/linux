@@ -3028,18 +3028,6 @@ ath10k_wmi_tlv_op_cleanup_mgmt_tx_send(struct ath10k *ar,
 }
 
 static int
-ath10k_wmi_tlv_op_cleanup_mgmt_tx_send(struct ath10k *ar,
-				       struct sk_buff *msdu)
-{
-	struct ath10k_skb_cb *cb = ATH10K_SKB_CB(msdu);
-	struct ath10k_wmi *wmi = &ar->wmi;
-
-	idr_remove(&wmi->mgmt_pending_tx, cb->msdu_id);
-
-	return 0;
-}
-
-static int
 ath10k_wmi_mgmt_tx_alloc_msdu_id(struct ath10k *ar, struct sk_buff *skb,
 				 dma_addr_t paddr)
 {

@@ -56,7 +56,6 @@
 #include <asm/intel-family.h>
 #include <asm/cpu_device_id.h>
 #include <asm/uv/uv.h>
-#include <asm/resctrl_sched.h>
 
 #include "cpu.h"
 
