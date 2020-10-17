@@ -1384,11 +1384,6 @@ static int ima_parse_rule(char *rule, struct ima_rule_entry *entry)
 				result = -EINVAL;
 			break;
 		case Opt_appraise_flag:
-			if (entry->action != APPRAISE) {
-				result = -EINVAL;
-				break;
-			}
-
 			ima_log_string(ab, "appraise_flag", args[0].from);
 			if (IS_ENABLED(CONFIG_IMA_APPRAISE_MODSIG) &&
 			    strstr(args[0].from, "blacklist"))

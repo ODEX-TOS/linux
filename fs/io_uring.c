@@ -2030,17 +2030,6 @@ static inline bool io_run_task_work(void)
 	return false;
 }
 
-static inline bool io_run_task_work(void)
-{
-	if (current->task_works) {
-		__set_current_state(TASK_RUNNING);
-		task_work_run();
-		return true;
-	}
-
-	return false;
-}
-
 static void io_iopoll_queue(struct list_head *again)
 {
 	struct io_kiocb *req;

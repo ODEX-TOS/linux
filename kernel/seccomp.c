@@ -52,14 +52,6 @@
  */
 #define SECCOMP_IOCTL_NOTIF_ID_VALID_WRONG_DIR	SECCOMP_IOR(2, __u64)
 
-/*
- * When SECCOMP_IOCTL_NOTIF_ID_VALID was first introduced, it had the
- * wrong direction flag in the ioctl number. This is the broken one,
- * which the kernel needs to keep supporting until all userspaces stop
- * using the wrong command number.
- */
-#define SECCOMP_IOCTL_NOTIF_ID_VALID_WRONG_DIR	SECCOMP_IOR(2, __u64)
-
 enum notify_state {
 	SECCOMP_NOTIFY_INIT,
 	SECCOMP_NOTIFY_SENT,

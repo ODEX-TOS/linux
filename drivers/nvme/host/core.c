@@ -398,16 +398,6 @@ bool nvme_change_ctrl_state(struct nvme_ctrl *ctrl,
 			break;
 		}
 		break;
-	case NVME_CTRL_DELETING_NOIO:
-		switch (old_state) {
-		case NVME_CTRL_DELETING:
-		case NVME_CTRL_DEAD:
-			changed = true;
-			/* FALLTHRU */
-		default:
-			break;
-		}
-		break;
 	case NVME_CTRL_DEAD:
 		switch (old_state) {
 		case NVME_CTRL_DELETING:

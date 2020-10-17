@@ -2181,21 +2181,6 @@ static void nvme_tcp_complete_timed_out(struct request *rq)
 	mutex_unlock(&to_tcp_ctrl(ctrl)->teardown_lock);
 }
 
-static void nvme_tcp_complete_timed_out(struct request *rq)
-{
-	struct nvme_tcp_request *req = blk_mq_rq_to_pdu(rq);
-	struct nvme_ctrl *ctrl = &req->queue->ctrl->ctrl;
-
-	/* fence other contexts that may complete the command */
-	mutex_lock(&to_tcp_ctrl(ctrl)->teardown_lock);
-	nvme_tcp_stop_queue(ctrl, nvme_tcp_queue_id(req->queue));
-	if (!blk_mq_request_completed(rq)) {
-		nvme_req(rq)->status = NVME_SC_HOST_ABORTED_CMD;
-		blk_mq_complete_request(rq);
-	}
-	mutex_unlock(&to_tcp_ctrl(ctrl)->teardown_lock);
-}
-
 static enum blk_eh_timer_return
 nvme_tcp_timeout(struct request *rq, bool reserved)
 {

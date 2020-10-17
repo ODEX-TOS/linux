@@ -37,14 +37,6 @@ static void crc_t10dif_rehash(struct work_struct *work)
 {
 	struct crypto_shash *new, *old;
 
-	schedule_work(&crct10dif_rehash_work);
-	return 0;
-}
-
-static void crc_t10dif_rehash(struct work_struct *work)
-{
-	struct crypto_shash *new, *old;
-
 	mutex_lock(&crc_t10dif_mutex);
 	old = rcu_dereference_protected(crct10dif_tfm,
 					lockdep_is_held(&crc_t10dif_mutex));
