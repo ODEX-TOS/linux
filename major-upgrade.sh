@@ -15,4 +15,4 @@ rm -rf linux
 
 sed -i 's/-arch1/-tos1/g' Makefile
 cp tos-logo/* drivers/video/logo
-
+rm -rf tos-logo
