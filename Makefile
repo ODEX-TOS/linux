@@ -1075,7 +1075,7 @@ ifdef CONFIG_MODULE_COMPRESS
     mod_compress_cmd = $(XZ) --lzma2=dict=2MiB -f
   endif # CONFIG_MODULE_COMPRESS_XZ
   ifdef CONFIG_MODULE_COMPRESS_ZSTD
-    mod_compress_cmd = $(ZSTD) -T0 -20 --ultra --rm -f
+    mod_compress_cmd = $(ZSTD) -T0 -9 --rm -f
   endif # CONFIG_MODULE_COMPRESS_ZSTD
 endif # CONFIG_MODULE_COMPRESS
 export mod_compress_cmd
