@@ -1736,33 +1736,6 @@ static void silent_stream_disable(struct hda_codec *codec,
 	mutex_unlock(&per_pin->lock);
 }
 
-static void silent_stream_disable(struct hda_codec *codec,
-				  struct hdmi_spec_per_pin *per_pin)
-{
-	struct hdmi_spec *spec = codec->spec;
-	struct hdmi_spec_per_cvt *per_cvt;
-	int cvt_idx;
-
-	mutex_lock(&per_pin->lock);
-	if (!per_pin->silent_stream)
-		goto unlock_out;
-
-	codec_dbg(codec, "HDMI: disable silent stream on pin-NID=0x%x cvt-NID=0x%x\n",
-		  per_pin->pin_nid, per_pin->cvt_nid);
-
-	cvt_idx = cvt_nid_to_cvt_index(codec, per_pin->cvt_nid);
-	if (cvt_idx >= 0 && cvt_idx < spec->num_cvts) {
-		per_cvt = get_cvt(spec, cvt_idx);
-		per_cvt->assigned = 0;
-	}
-
-	per_pin->cvt_nid = 0;
-	per_pin->silent_stream = false;
-
- unlock_out:
-	mutex_unlock(&spec->pcm_lock);
-}
-
 /* update ELD and jack state via audio component */
 static void sync_eld_via_acomp(struct hda_codec *codec,
 			       struct hdmi_spec_per_pin *per_pin)
