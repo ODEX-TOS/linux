@@ -57,7 +57,6 @@ struct user_namespace {
 	struct uid_gid_map	uid_map;
 	struct uid_gid_map	gid_map;
 	struct uid_gid_map	projid_map;
-	atomic_t		count;
 	struct user_namespace	*parent;
 	int			level;
 	kuid_t			owner;
@@ -111,7 +110,7 @@ extern int unprivileged_userns_clone;
 static inline struct user_namespace *get_user_ns(struct user_namespace *ns)
 {
 	if (ns)
-		atomic_inc(&ns->count);
+		refcount_inc(&ns->ns.count);
 	return ns;
 }
 
@@ -121,7 +120,7 @@ extern void __put_user_ns(struct user_namespace *ns);
 
 static inline void put_user_ns(struct user_namespace *ns)
 {
-	if (ns && atomic_dec_and_test(&ns->count))
+	if (ns && refcount_dec_and_test(&ns->ns.count))
 		__put_user_ns(ns);
 }
 

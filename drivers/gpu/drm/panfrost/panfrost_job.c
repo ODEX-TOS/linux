@@ -617,6 +617,8 @@ int panfrost_job_init(struct panfrost_device *pfdev)
 	}
 
 	for (j = 0; j < NUM_JOB_SLOTS; j++) {
+		mutex_init(&js->queue[j].lock);
+
 		js->queue[j].fence_context = dma_fence_context_alloc(1);
 
 		ret = drm_sched_init(&js->queue[j].sched,
@@ -647,8 +649,10 @@ void panfrost_job_fini(struct panfrost_device *pfdev)
 
 	job_write(pfdev, JOB_INT_MASK, 0);
 
-	for (j = 0; j < NUM_JOB_SLOTS; j++)
+	for (j = 0; j < NUM_JOB_SLOTS; j++) {
 		drm_sched_fini(&js->queue[j].sched);
+		mutex_destroy(&js->queue[j].lock);
+	}
 
 }
 
