@@ -2,8 +2,8 @@
 VERSION = 5
 PATCHLEVEL = 12
 SUBLEVEL = 0
-EXTRAVERSION =
-NAME = Frozen Wasteland
+EXTRAVERSION = -zen
+NAME = Crossing the Sliðr
 
 # *DOCUMENTATION*
 # To see a list of typical targets execute "make help"
