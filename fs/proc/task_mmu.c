@@ -19,6 +19,7 @@
 #include <linux/shmem_fs.h>
 #include <linux/uaccess.h>
 #include <linux/pkeys.h>
+#include <linux/mm_inline.h>
 
 #include <asm/elf.h>
 #include <asm/tlb.h>
@@ -1036,8 +1037,6 @@ struct clear_refs_private {
 
 #ifdef CONFIG_MEM_SOFT_DIRTY
 
-#define is_cow_mapping(flags) (((flags) & (VM_SHARED | VM_MAYWRITE)) == VM_MAYWRITE)
-
 static inline bool pte_is_pinned(struct vm_area_struct *vma, unsigned long addr, pte_t pte)
 {
 	struct page *page;
@@ -1720,7 +1719,7 @@ static void gather_stats(struct page *page, struct numa_maps *md, int pte_dirty,
 	if (PageSwapCache(page))
 		md->swapcache += nr_pages;
 
-	if (PageActive(page) || PageUnevictable(page))
+	if (PageUnevictable(page) || page_is_active(compound_head(page), NULL))
 		md->active += nr_pages;
 
 	if (PageWriteback(page))

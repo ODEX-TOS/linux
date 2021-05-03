@@ -39,11 +39,6 @@
 MODULE_AUTHOR("Zach Brown <zab@zabbo.net>, Takashi Iwai <tiwai@suse.de>");
 MODULE_DESCRIPTION("ESS Maestro3 PCI");
 MODULE_LICENSE("GPL");
-MODULE_SUPPORTED_DEVICE("{{ESS,Maestro3 PCI},"
-		"{ESS,ES1988},"
-		"{ESS,Allegro PCI},"
-		"{ESS,Allegro-1 PCI},"
-	        "{ESS,Canyon3D-2/LE PCI}}");
 MODULE_FIRMWARE("ess/maestro3_assp_kernel.fw");
 MODULE_FIRMWARE("ess/maestro3_assp_minisrc.fw");
 
@@ -1245,7 +1240,7 @@ static void snd_m3_pcm_setup2(struct snd_m3 *chip, struct m3_dma *s,
 			  snd_pcm_format_width(runtime->format) == 16 ? 0 : 1);
 
 	/* set up dac/adc rate */
-	freq = ((runtime->rate << 15) + 24000 ) / 48000;
+	freq = DIV_ROUND_CLOSEST(runtime->rate << 15, 48000);
 	if (freq) 
 		freq--;
 
@@ -1995,7 +1990,7 @@ static void snd_m3_ac97_reset(struct snd_m3 *chip)
 		outw(0, io + GPIO_DATA);
 		outw(dir | GPO_PRIMARY_AC97, io + GPIO_DIRECTION);
 
-		schedule_timeout_uninterruptible(msecs_to_jiffies(delay1));
+		schedule_msec_hrtimeout_uninterruptible((delay1));
 
 		outw(GPO_PRIMARY_AC97, io + GPIO_DATA);
 		udelay(5);
@@ -2003,7 +1998,7 @@ static void snd_m3_ac97_reset(struct snd_m3 *chip)
 		outw(IO_SRAM_ENABLE | SERIAL_AC_LINK_ENABLE, io + RING_BUS_CTRL_A);
 		outw(~0, io + GPIO_MASK);
 
-		schedule_timeout_uninterruptible(msecs_to_jiffies(delay2));
+		schedule_msec_hrtimeout_uninterruptible((delay2));
 
 		if (! snd_m3_try_read_vendor(chip))
 			break;
@@ -2532,8 +2527,7 @@ snd_m3_create(struct snd_card *card, struct pci_dev *pci,
 		return -EIO;
 
 	/* check, if we can restrict PCI DMA transfers to 28 bits */
-	if (dma_set_mask(&pci->dev, DMA_BIT_MASK(28)) < 0 ||
-	    dma_set_coherent_mask(&pci->dev, DMA_BIT_MASK(28)) < 0) {
+	if (dma_set_mask_and_coherent(&pci->dev, DMA_BIT_MASK(28))) {
 		dev_err(card->dev,
 			"architecture does not support 28bit PCI busmaster DMA\n");
 		pci_disable_device(pci);

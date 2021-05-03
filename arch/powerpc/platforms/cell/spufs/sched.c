@@ -54,7 +54,9 @@ static struct timer_list spuloadavg_timer;
 /*
  * Priority of a normal, non-rt, non-niced'd process (aka nice level 0).
  */
+#ifndef CONFIG_SCHED_MUQSS
 #define NORMAL_PRIO		120
+#endif
 
 /*
  * Frequency of the spu scheduler tick.  By default we do one SPU scheduler
@@ -72,7 +74,7 @@ static struct timer_list spuloadavg_timer;
 #define DEF_SPU_TIMESLICE	(100 * HZ / (1000 * SPUSCHED_TICK))
 
 #define SCALE_PRIO(x, prio) \
-	max(x * (MAX_PRIO - prio) / (MAX_USER_PRIO / 2), MIN_SPU_TIMESLICE)
+	max(x * (MAX_PRIO - prio) / (NICE_WIDTH / 2), MIN_SPU_TIMESLICE)
 
 /*
  * scale user-nice values [ -20 ... 0 ... 19 ] to time slice values:
@@ -181,9 +183,6 @@ void do_notify_spus_active(void)
 
 	/*
 	 * Wake up the active spu_contexts.
-	 *
-	 * When the awakened processes see their "notify_active" flag is set,
-	 * they will call spu_switch_notify().
 	 */
 	for_each_online_node(node) {
 		struct spu *spu;
@@ -239,7 +238,6 @@ static void spu_bind_context(struct spu *spu, struct spu_context *ctx)
 	spu_switch_log_notify(spu, ctx, SWITCH_LOG_START, 0);
 	spu_restore(&ctx->csa, spu);
 	spu->timestamp = jiffies;
-	spu_switch_notify(spu, ctx);
 	ctx->state = SPU_STATE_RUNNABLE;
 
 	spuctx_switch_state(ctx, SPU_UTIL_USER);
@@ -440,7 +438,6 @@ static void spu_unbind_context(struct spu *spu, struct spu_context *ctx)
 		 */
 		atomic_dec_if_positive(&ctx->gang->aff_sched_count);
 
-	spu_switch_notify(spu, NULL);
 	spu_unmap_mappings(ctx);
 	spu_save(&ctx->csa, spu);
 	spu_switch_log_notify(spu, ctx, SWITCH_LOG_STOP, 0);

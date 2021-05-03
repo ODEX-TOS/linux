@@ -25,7 +25,7 @@
 #define PROCSPEECH '\r'
 
 static int synth_probe(struct spk_synth *synth);
-static void accent_release(void);
+static void accent_release(struct spk_synth *synth);
 static const char *synth_immediate(struct spk_synth *synth, const char *buf);
 static void do_catch_up(struct spk_synth *synth);
 static void synth_flush(struct spk_synth *synth);
@@ -198,7 +198,7 @@ static void do_catch_up(struct spk_synth *synth)
 		full_time_val = full_time->u.n.value;
 		spin_unlock_irqrestore(&speakup_info.spinlock, flags);
 		if (synth_full()) {
-			schedule_timeout(msecs_to_jiffies(full_time_val));
+			schedule_msec_hrtimeout((full_time_val));
 			continue;
 		}
 		set_current_state(TASK_RUNNING);
@@ -226,7 +226,7 @@ static void do_catch_up(struct spk_synth *synth)
 			jiffy_delta_val = jiffy_delta->u.n.value;
 			delay_time_val = delay_time->u.n.value;
 			spin_unlock_irqrestore(&speakup_info.spinlock, flags);
-			schedule_timeout(msecs_to_jiffies(delay_time_val));
+			schedule_msec_hrtimeout(delay_time_val);
 			jiff_max = jiffies + jiffy_delta_val;
 		}
 	}
@@ -294,7 +294,7 @@ static int synth_probe(struct spk_synth *synth)
 	return 0;
 }
 
-static void accent_release(void)
+static void accent_release(struct spk_synth *synth)
 {
 	spk_stop_serial_interrupt();
 	if (speakup_info.port_tts)

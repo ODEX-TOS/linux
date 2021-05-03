@@ -18,8 +18,6 @@
 
 #include "pcan_usb_core.h"
 
-MODULE_SUPPORTED_DEVICE("PEAK-System PCAN-USB adapter");
-
 /* PCAN-USB Endpoints */
 #define PCAN_USB_EP_CMDOUT		1
 #define PCAN_USB_EP_CMDIN		(PCAN_USB_EP_CMDOUT | USB_DIR_IN)
@@ -290,7 +288,7 @@ static int pcan_usb_write_mode(struct peak_usb_device *dev, u8 onoff)
 	} else {
 		/* the PCAN-USB needs time to init */
 		set_current_state(TASK_INTERRUPTIBLE);
-		schedule_timeout(msecs_to_jiffies(PCAN_USB_STARTUP_TIMEOUT));
+		schedule_msec_hrtimeout((PCAN_USB_STARTUP_TIMEOUT));
 	}
 
 	return err;

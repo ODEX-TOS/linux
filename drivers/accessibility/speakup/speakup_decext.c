@@ -180,7 +180,7 @@ static void do_catch_up(struct spk_synth *synth)
 		if (ch == '\n')
 			ch = 0x0D;
 		if (synth_full() || !synth->io_ops->synth_out(synth, ch)) {
-			schedule_timeout(msecs_to_jiffies(delay_time_val));
+			schedule_msec_hrtimeout(delay_time_val);
 			continue;
 		}
 		set_current_state(TASK_RUNNING);
@@ -218,7 +218,7 @@ static void do_catch_up(struct spk_synth *synth)
 static void synth_flush(struct spk_synth *synth)
 {
 	in_escape = 0;
-	synth->io_ops->flush_buffer();
+	synth->io_ops->flush_buffer(synth);
 	synth->synth_immediate(synth, "\033P;10z\033\\");
 }
 

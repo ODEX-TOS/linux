@@ -113,11 +113,48 @@ else
         # FIXME - should be integrated in Makefile.cpu (Makefile_32.cpu)
         cflags-$(CONFIG_MK8) += $(call cc-option,-march=k8)
         cflags-$(CONFIG_MPSC) += $(call cc-option,-march=nocona)
+        cflags-$(CONFIG_MK8SSE3) += $(call cc-option,-march=k8-sse3)
+        cflags-$(CONFIG_MK10) += $(call cc-option,-march=amdfam10)
+        cflags-$(CONFIG_MBARCELONA) += $(call cc-option,-march=barcelona)
+        cflags-$(CONFIG_MBOBCAT) += $(call cc-option,-march=btver1)
+        cflags-$(CONFIG_MJAGUAR) += $(call cc-option,-march=btver2)
+        cflags-$(CONFIG_MBULLDOZER) += $(call cc-option,-march=bdver1)
+        cflags-$(CONFIG_MPILEDRIVER) += $(call cc-option,-march=bdver2)
+        cflags-$(CONFIG_MPILEDRIVER) += $(call cc-option,-mno-tbm)
+        cflags-$(CONFIG_MSTEAMROLLER) += $(call cc-option,-march=bdver3)
+        cflags-$(CONFIG_MSTEAMROLLER) += $(call cc-option,-mno-tbm)
+        cflags-$(CONFIG_MEXCAVATOR) += $(call cc-option,-march=bdver4)
+        cflags-$(CONFIG_MEXCAVATOR) += $(call cc-option,-mno-tbm)
+        cflags-$(CONFIG_MZEN) += $(call cc-option,-march=znver1)
+        cflags-$(CONFIG_MZEN2) += $(call cc-option,-march=znver2)
+        cflags-$(CONFIG_MZEN3) += $(call cc-option,-march=znver3)
 
-        cflags-$(CONFIG_MCORE2) += \
-                $(call cc-option,-march=core2,$(call cc-option,-mtune=generic))
-	cflags-$(CONFIG_MATOM) += $(call cc-option,-march=atom) \
-		$(call cc-option,-mtune=atom,$(call cc-option,-mtune=generic))
+        cflags-$(CONFIG_MNATIVE_INTEL) += $(call cc-option,-march=native)
+        cflags-$(CONFIG_MNATIVE_AMD) += $(call cc-option,-march=native)
+        cflags-$(CONFIG_MATOM) += $(call cc-option,-march=bonnell)
+        cflags-$(CONFIG_MCORE2) += $(call cc-option,-march=core2)
+        cflags-$(CONFIG_MNEHALEM) += $(call cc-option,-march=nehalem)
+        cflags-$(CONFIG_MWESTMERE) += $(call cc-option,-march=westmere)
+        cflags-$(CONFIG_MSILVERMONT) += $(call cc-option,-march=silvermont)
+        cflags-$(CONFIG_MGOLDMONT) += $(call cc-option,-march=goldmont)
+        cflags-$(CONFIG_MGOLDMONTPLUS) += $(call cc-option,-march=goldmont-plus)
+        cflags-$(CONFIG_MSANDYBRIDGE) += $(call cc-option,-march=sandybridge)
+        cflags-$(CONFIG_MIVYBRIDGE) += $(call cc-option,-march=ivybridge)
+        cflags-$(CONFIG_MHASWELL) += $(call cc-option,-march=haswell)
+        cflags-$(CONFIG_MBROADWELL) += $(call cc-option,-march=broadwell)
+        cflags-$(CONFIG_MSKYLAKE) += $(call cc-option,-march=skylake)
+        cflags-$(CONFIG_MSKYLAKEX) += $(call cc-option,-march=skylake-avx512)
+        cflags-$(CONFIG_MCANNONLAKE) += $(call cc-option,-march=cannonlake)
+        cflags-$(CONFIG_MICELAKE) += $(call cc-option,-march=icelake-client)
+        cflags-$(CONFIG_MCASCADELAKE) += $(call cc-option,-march=cascadelake)
+        cflags-$(CONFIG_MCOOPERLAKE) += $(call cc-option,-march=cooperlake)
+        cflags-$(CONFIG_MTIGERLAKE) += $(call cc-option,-march=tigerlake)
+        cflags-$(CONFIG_MSAPPHIRERAPIDS) += $(call cc-option,-march=sapphirerapids)
+        cflags-$(CONFIG_MROCKETLAKE) += $(call cc-option,-march=rocketlake)
+        cflags-$(CONFIG_MALDERLAKE) += $(call cc-option,-march=alderlake)
+        cflags-$(CONFIG_GENERIC_CPU2) += $(call cc-option,-march=x86-64-v2)
+        cflags-$(CONFIG_GENERIC_CPU3) += $(call cc-option,-march=x86-64-v3)
+        cflags-$(CONFIG_GENERIC_CPU4) += $(call cc-option,-march=x86-64-v4)
         cflags-$(CONFIG_GENERIC_CPU) += $(call cc-option,-mtune=generic)
         KBUILD_CFLAGS += $(cflags-y)
 
@@ -167,6 +204,11 @@ endif
 ifeq ($(ACCUMULATE_OUTGOING_ARGS), 1)
 	# This compiler flag is not supported by Clang:
 	KBUILD_CFLAGS += $(call cc-option,-maccumulate-outgoing-args,)
+endif
+
+ifdef CONFIG_LTO_CLANG
+KBUILD_LDFLAGS	+= -plugin-opt=-code-model=kernel \
+		   -plugin-opt=-stack-alignment=$(if $(CONFIG_X86_32),4,8)
 endif
 
 # Workaround for a gcc prelease that unfortunately was shipped in a suse release
@@ -232,9 +274,6 @@ core-y += arch/x86/
 drivers-$(CONFIG_MATH_EMULATION) += arch/x86/math-emu/
 drivers-$(CONFIG_PCI)            += arch/x86/pci/
 
-# must be linked after kernel/
-drivers-$(CONFIG_OPROFILE) += arch/x86/oprofile/
-
 # suspend and hibernation support
 drivers-$(CONFIG_PM) += arch/x86/power/
 
@@ -295,16 +334,20 @@ archclean:
 	$(Q)$(MAKE) $(clean)=arch/x86/tools
 
 define archhelp
-  echo  '* bzImage      - Compressed kernel image (arch/x86/boot/bzImage)'
-  echo  '  install      - Install kernel using'
-  echo  '                  (your) ~/bin/$(INSTALLKERNEL) or'
-  echo  '                  (distribution) /sbin/$(INSTALLKERNEL) or'
-  echo  '                  install to $$(INSTALL_PATH) and run lilo'
-  echo  '  fdimage      - Create 1.4MB boot floppy image (arch/x86/boot/fdimage)'
-  echo  '  fdimage144   - Create 1.4MB boot floppy image (arch/x86/boot/fdimage)'
-  echo  '  fdimage288   - Create 2.8MB boot floppy image (arch/x86/boot/fdimage)'
-  echo  '  isoimage     - Create a boot CD-ROM image (arch/x86/boot/image.iso)'
-  echo  '                  bzdisk/fdimage*/isoimage also accept:'
-  echo  '                  FDARGS="..."  arguments for the booted kernel'
-  echo  '                  FDINITRD=file initrd for the booted kernel'
+  echo  '* bzImage		- Compressed kernel image (arch/x86/boot/bzImage)'
+  echo  '  install		- Install kernel using (your) ~/bin/$(INSTALLKERNEL) or'
+  echo  '			  (distribution) /sbin/$(INSTALLKERNEL) or install to '
+  echo  '			  $$(INSTALL_PATH) and run lilo'
+  echo  ''
+  echo  '  fdimage		- Create 1.4MB boot floppy image (arch/x86/boot/fdimage)'
+  echo  '  fdimage144		- Create 1.4MB boot floppy image (arch/x86/boot/fdimage)'
+  echo  '  fdimage288		- Create 2.8MB boot floppy image (arch/x86/boot/fdimage)'
+  echo  '  isoimage		- Create a boot CD-ROM image (arch/x86/boot/image.iso)'
+  echo  '			  bzdisk/fdimage*/isoimage also accept:'
+  echo  '			  FDARGS="..."  arguments for the booted kernel'
+  echo  '                  	  FDINITRD=file initrd for the booted kernel'
+  echo  ''
+  echo  '  kvm_guest.config	- Enable Kconfig items for running this kernel as a KVM guest'
+  echo  '  xen.config		- Enable Kconfig items for running this kernel as a Xen guest'
+
 endef

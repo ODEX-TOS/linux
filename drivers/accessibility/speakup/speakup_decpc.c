@@ -125,7 +125,7 @@ enum {	PRIMARY_DIC	= 0, USER_DIC, COMMAND_DIC, ABBREV_DIC };
 #define SYNTH_IO_EXTENT 8
 
 static int synth_probe(struct spk_synth *synth);
-static void dtpc_release(void);
+static void dtpc_release(struct spk_synth *synth);
 static const char *synth_immediate(struct spk_synth *synth, const char *buf);
 static void do_catch_up(struct spk_synth *synth);
 static void synth_flush(struct spk_synth *synth);
@@ -398,7 +398,7 @@ static void do_catch_up(struct spk_synth *synth)
 		if (ch == '\n')
 			ch = 0x0D;
 		if (dt_sendchar(ch)) {
-			schedule_timeout(msecs_to_jiffies(delay_time_val));
+			schedule_msec_hrtimeout((delay_time_val));
 			continue;
 		}
 		set_current_state(TASK_RUNNING);
@@ -474,7 +474,7 @@ static int synth_probe(struct spk_synth *synth)
 	return 0;
 }
 
-static void dtpc_release(void)
+static void dtpc_release(struct spk_synth *synth)
 {
 	spk_stop_serial_interrupt();
 	if (speakup_info.port_tts)

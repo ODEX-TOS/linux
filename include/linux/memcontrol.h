@@ -92,6 +92,10 @@ struct lruvec_stat {
 	long count[NR_VM_NODE_STAT_ITEMS];
 };
 
+struct batched_lruvec_stat {
+	s32 count[NR_VM_NODE_STAT_ITEMS];
+};
+
 /*
  * Bitmap of shrinker::id corresponding to memcg-aware shrinkers,
  * which have elements charged to this memcg.
@@ -107,11 +111,17 @@ struct memcg_shrinker_map {
 struct mem_cgroup_per_node {
 	struct lruvec		lruvec;
 
-	/* Legacy local VM stats */
+	/*
+	 * Legacy local VM stats. This should be struct lruvec_stat and
+	 * cannot be optimized to struct batched_lruvec_stat. Because
+	 * the threshold of the lruvec_stat_cpu can be as big as
+	 * MEMCG_CHARGE_BATCH * PAGE_SIZE. It can fit into s32. But this
+	 * filed has no upper limit.
+	 */
 	struct lruvec_stat __percpu *lruvec_stat_local;
 
 	/* Subtree VM stats (batched updates) */
-	struct lruvec_stat __percpu *lruvec_stat_cpu;
+	struct batched_lruvec_stat __percpu *lruvec_stat_cpu;
 	atomic_long_t		lruvec_stat[NR_VM_NODE_STAT_ITEMS];
 
 	unsigned long		lru_zone_size[MAX_NR_ZONES][NR_LRU_LISTS];
@@ -201,6 +211,8 @@ struct obj_cgroup {
 		struct rcu_head rcu;
 	};
 };
+
+struct lru_gen_mm_list;
 
 /*
  * The memory controller data structure. The memory controller controls both
@@ -323,6 +335,10 @@ struct mem_cgroup {
 
 #ifdef CONFIG_TRANSPARENT_HUGEPAGE
 	struct deferred_split deferred_split_queue;
+#endif
+
+#ifdef CONFIG_LRU_GEN
+	struct lru_gen_mm_list *mm_list;
 #endif
 
 	struct mem_cgroup_per_node *nodeinfo[0];
@@ -475,19 +491,6 @@ static inline struct obj_cgroup **page_objcgs_check(struct page *page)
 	return (struct obj_cgroup **)(memcg_data & ~MEMCG_DATA_FLAGS_MASK);
 }
 
-/*
- * set_page_objcgs - associate a page with a object cgroups vector
- * @page: a pointer to the page struct
- * @objcgs: a pointer to the object cgroups vector
- *
- * Atomically associates a page with a vector of object cgroups.
- */
-static inline bool set_page_objcgs(struct page *page,
-					struct obj_cgroup **objcgs)
-{
-	return !cmpxchg(&page->memcg_data, 0, (unsigned long)objcgs |
-			MEMCG_DATA_OBJCGS);
-}
 #else
 static inline struct obj_cgroup **page_objcgs(struct page *page)
 {
@@ -497,12 +500,6 @@ static inline struct obj_cgroup **page_objcgs(struct page *page)
 static inline struct obj_cgroup **page_objcgs_check(struct page *page)
 {
 	return NULL;
-}
-
-static inline bool set_page_objcgs(struct page *page,
-					struct obj_cgroup **objcgs)
-{
-	return true;
 }
 #endif
 
@@ -688,8 +685,6 @@ static inline bool lruvec_holds_page_lru_lock(struct page *page,
 struct mem_cgroup *mem_cgroup_from_task(struct task_struct *p);
 
 struct mem_cgroup *get_mem_cgroup_from_mm(struct mm_struct *mm);
-
-struct mem_cgroup *get_mem_cgroup_from_page(struct page *page);
 
 struct lruvec *lock_page_lruvec(struct page *page);
 struct lruvec *lock_page_lruvec_irq(struct page *page);
@@ -1088,7 +1083,6 @@ static inline struct mem_cgroup *page_memcg(struct page *page)
 
 static inline struct mem_cgroup *page_memcg_rcu(struct page *page)
 {
-	WARN_ON_ONCE(!rcu_read_lock_held());
 	return NULL;
 }
 
@@ -1194,11 +1188,6 @@ static inline bool mm_match_cgroup(struct mm_struct *mm,
 }
 
 static inline struct mem_cgroup *get_mem_cgroup_from_mm(struct mm_struct *mm)
-{
-	return NULL;
-}
-
-static inline struct mem_cgroup *get_mem_cgroup_from_page(struct page *page)
 {
 	return NULL;
 }
@@ -1599,9 +1588,6 @@ static inline void memcg_set_shrinker_bit(struct mem_cgroup *memcg,
 #endif
 
 #ifdef CONFIG_MEMCG_KMEM
-int __memcg_kmem_charge(struct mem_cgroup *memcg, gfp_t gfp,
-			unsigned int nr_pages);
-void __memcg_kmem_uncharge(struct mem_cgroup *memcg, unsigned int nr_pages);
 int __memcg_kmem_charge_page(struct page *page, gfp_t gfp, int order);
 void __memcg_kmem_uncharge_page(struct page *page, int order);
 

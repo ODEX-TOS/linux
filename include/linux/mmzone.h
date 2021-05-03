@@ -206,8 +206,28 @@ enum node_stat_item {
 	NR_KERNEL_SCS_KB,	/* measured in KiB */
 #endif
 	NR_PAGETABLE,		/* used for pagetables */
+#ifdef CONFIG_SWAP
+	NR_SWAPCACHE,
+#endif
 	NR_VM_NODE_STAT_ITEMS
 };
+
+/*
+ * Returns true if the item should be printed in THPs (/proc/vmstat
+ * currently prints number of anon, file and shmem THPs. But the item
+ * is charged in pages).
+ */
+static __always_inline bool vmstat_item_print_in_thp(enum node_stat_item item)
+{
+	if (!IS_ENABLED(CONFIG_TRANSPARENT_HUGEPAGE))
+		return false;
+
+	return item == NR_ANON_THPS ||
+	       item == NR_FILE_THPS ||
+	       item == NR_SHMEM_THPS ||
+	       item == NR_SHMEM_PMDMAPPED ||
+	       item == NR_FILE_PMDMAPPED;
+}
 
 /*
  * Returns true if the value is measured in bytes (most vmstat values are
@@ -265,13 +285,123 @@ static inline bool is_active_lru(enum lru_list lru)
 	return (lru == LRU_ACTIVE_ANON || lru == LRU_ACTIVE_FILE);
 }
 
-#define ANON_AND_FILE 2
-
 enum lruvec_flags {
 	LRUVEC_CONGESTED,		/* lruvec has many dirty pages
 					 * backed by a congested BDI
 					 */
 };
+
+struct lruvec;
+struct page_vma_mapped_walk;
+
+#define LRU_GEN_MASK		((BIT(LRU_GEN_WIDTH) - 1) << LRU_GEN_PGOFF)
+#define LRU_USAGE_MASK		((BIT(LRU_USAGE_WIDTH) - 1) << LRU_USAGE_PGOFF)
+
+#ifdef CONFIG_LRU_GEN
+
+/*
+ * For each lruvec, evictable pages are divided into multiple generations. The
+ * youngest and the oldest generation numbers, AKA max_seq and min_seq, are
+ * monotonically increasing. The sliding window technique is used to track at
+ * most MAX_NR_GENS and at least MIN_NR_GENS generations. An offset within the
+ * window, AKA gen, indexes an array of per-type and per-zone lists for the
+ * corresponding generation. All pages from this array of lists have gen+1
+ * stored in page->flags. 0 is reserved to indicate that pages are not on the
+ * lists.
+ */
+#define MAX_NR_GENS		((unsigned int)CONFIG_NR_LRU_GENS)
+
+/*
+ * Each generation is then divided into multiple tiers. Tiers represent levels
+ * of usage from file descriptors, i.e., mark_page_accessed(). In contrast to
+ * moving across generations which requires the lru lock, moving across tiers
+ * only involves an atomic operation on page->flags and therefore has a
+ * negligible cost.
+ *
+ * The purposes of tiers are to:
+ *   1) estimate whether pages accessed multiple times via file descriptors are
+ *   more active than pages accessed only via page tables by separating the two
+ *   access types into upper tiers and the base tier and comparing refault rates
+ *   across tiers.
+ *   2) improve buffered io performance by deferring activations of pages
+ *   accessed multiple times until the eviction. That is activations happen in
+ *   the reclaim path, not the access path.
+ *
+ * Pages accessed N times via file descriptors belong to tier order_base_2(N).
+ * The base tier uses the following page flag:
+ *   !PageReferenced() -- readahead pages
+ *   PageReferenced() -- single-access pages
+ * All upper tiers use the following page flags:
+ *   PageReferenced() && PageWorkingset() -- multi-access pages
+ * in addition to the bits storing N-2 accesses. Therefore, we can support one
+ * upper tier without using additional bits in page->flags.
+ *
+ * Note that
+ *   1) PageWorkingset() is always set for upper tiers because we want to
+ *    maintain the existing psi behavior.
+ *   2) !PageReferenced() && PageWorkingset() is not a valid tier. See the
+ *   comment in evict_lru_gen_pages().
+ *   3) pages accessed only via page tables belong to the base tier.
+ *
+ * Pages from the base tier are evicted regardless of the refault rate. Pages
+ * from upper tiers will be moved to the next generation, if their refault rates
+ * are higher than that of the base tier.
+ */
+#define MAX_NR_TIERS		((unsigned int)CONFIG_TIERS_PER_GEN)
+#define LRU_TIER_FLAGS		(BIT(PG_referenced) | BIT(PG_workingset))
+#define LRU_USAGE_SHIFT		(CONFIG_TIERS_PER_GEN - 1)
+
+/* Whether to keep historical stats for each generation. */
+#ifdef CONFIG_LRU_GEN_STATS
+#define NR_STAT_GENS		((unsigned int)CONFIG_NR_LRU_GENS)
+#else
+#define NR_STAT_GENS		1U
+#endif
+
+struct lrugen {
+	/* the aging increments the max generation number */
+	unsigned long max_seq;
+	/* the eviction increments the min generation numbers */
+	unsigned long min_seq[ANON_AND_FILE];
+	/* the birth time of each generation in jiffies */
+	unsigned long timestamps[MAX_NR_GENS];
+	/* the lists of the multigenerational lru */
+	struct list_head lists[MAX_NR_GENS][ANON_AND_FILE][MAX_NR_ZONES];
+	/* the sizes of the multigenerational lru in pages */
+	unsigned long sizes[MAX_NR_GENS][ANON_AND_FILE][MAX_NR_ZONES];
+	/* to determine which type and its tiers to evict */
+	atomic_long_t evicted[NR_STAT_GENS][ANON_AND_FILE][MAX_NR_TIERS];
+	atomic_long_t refaulted[NR_STAT_GENS][ANON_AND_FILE][MAX_NR_TIERS];
+	/* the base tier is inactive and won't be activated */
+	unsigned long activated[NR_STAT_GENS][ANON_AND_FILE][MAX_NR_TIERS - 1];
+	/* arithmetic mean weighted by geometric series 1/2, 1/4, ... */
+	unsigned long avg_total[ANON_AND_FILE][MAX_NR_TIERS];
+	unsigned long avg_refaulted[ANON_AND_FILE][MAX_NR_TIERS];
+	/* reclaim priority to compare across memcgs */
+	atomic_t priority;
+	/* whether the multigenerational lru is enabled */
+	bool enabled[ANON_AND_FILE];
+};
+
+void lru_gen_init_lruvec(struct lruvec *lruvec);
+void lru_gen_set_state(bool enable, bool main, bool swap);
+void lru_gen_scan_around(struct page_vma_mapped_walk *pvmw);
+
+#else /* CONFIG_LRU_GEN */
+
+static inline void lru_gen_init_lruvec(struct lruvec *lruvec)
+{
+}
+
+static inline void lru_gen_set_state(bool enable, bool main, bool swap)
+{
+}
+
+static inline void lru_gen_scan_around(struct page_vma_mapped_walk *pvmw)
+{
+}
+
+#endif /* CONFIG_LRU_GEN */
 
 struct lruvec {
 	struct list_head		lists[NR_LRU_LISTS];
@@ -290,6 +420,10 @@ struct lruvec {
 	unsigned long			refaults[ANON_AND_FILE];
 	/* Various lruvec state flags (enum lruvec_flags) */
 	unsigned long			flags;
+#ifdef CONFIG_LRU_GEN
+	/* unevictable pages are on LRU_UNEVICTABLE */
+	struct lrugen			evictable;
+#endif
 #ifdef CONFIG_MEMCG
 	struct pglist_data *pgdat;
 #endif
@@ -483,6 +617,9 @@ struct zone {
 	 * bootmem allocator):
 	 *	managed_pages = present_pages - reserved_pages;
 	 *
+	 * cma pages is present pages that are assigned for CMA use
+	 * (MIGRATE_CMA).
+	 *
 	 * So present_pages may be used by memory hotplug or memory power
 	 * management logic to figure out unmanaged pages by checking
 	 * (present_pages - managed_pages). And managed_pages should be used
@@ -507,6 +644,9 @@ struct zone {
 	atomic_long_t		managed_pages;
 	unsigned long		spanned_pages;
 	unsigned long		present_pages;
+#ifdef CONFIG_CMA
+	unsigned long		cma_pages;
+#endif
 
 	const char		*name;
 
@@ -602,6 +742,15 @@ enum zone_flags {
 static inline unsigned long zone_managed_pages(struct zone *zone)
 {
 	return (unsigned long)atomic_long_read(&zone->managed_pages);
+}
+
+static inline unsigned long zone_cma_pages(struct zone *zone)
+{
+#ifdef CONFIG_CMA
+	return zone->cma_pages;
+#else
+	return 0;
+#endif
 }
 
 static inline unsigned long zone_end_pfn(const struct zone *zone)
@@ -872,8 +1021,6 @@ static inline struct pglist_data *lruvec_pgdat(struct lruvec *lruvec)
 #endif
 }
 
-extern unsigned long lruvec_lru_size(struct lruvec *lruvec, enum lru_list lru, int zone_idx);
-
 #ifdef CONFIG_HAVE_MEMORYLESS_NODES
 int local_memory_node(int node_id);
 #else
@@ -884,6 +1031,18 @@ static inline int local_memory_node(int node_id) { return node_id; };
  * zone_idx() returns 0 for the ZONE_DMA zone, 1 for the ZONE_NORMAL zone, etc.
  */
 #define zone_idx(zone)		((zone) - (zone)->zone_pgdat->node_zones)
+
+#ifdef CONFIG_ZONE_DEVICE
+static inline bool zone_is_zone_device(struct zone *zone)
+{
+	return zone_idx(zone) == ZONE_DEVICE;
+}
+#else
+static inline bool zone_is_zone_device(struct zone *zone)
+{
+	return false;
+}
+#endif
 
 /*
  * Returns true if a zone has pages managed by the buddy allocator.
@@ -1273,13 +1432,14 @@ extern size_t mem_section_usage_size(void);
  *      which results in PFN_SECTION_SHIFT equal 6.
  * To sum it up, at least 6 bits are available.
  */
-#define	SECTION_MARKED_PRESENT	(1UL<<0)
-#define SECTION_HAS_MEM_MAP	(1UL<<1)
-#define SECTION_IS_ONLINE	(1UL<<2)
-#define SECTION_IS_EARLY	(1UL<<3)
-#define SECTION_MAP_LAST_BIT	(1UL<<4)
-#define SECTION_MAP_MASK	(~(SECTION_MAP_LAST_BIT-1))
-#define SECTION_NID_SHIFT	3
+#define SECTION_MARKED_PRESENT		(1UL<<0)
+#define SECTION_HAS_MEM_MAP		(1UL<<1)
+#define SECTION_IS_ONLINE		(1UL<<2)
+#define SECTION_IS_EARLY		(1UL<<3)
+#define SECTION_TAINT_ZONE_DEVICE	(1UL<<4)
+#define SECTION_MAP_LAST_BIT		(1UL<<5)
+#define SECTION_MAP_MASK		(~(SECTION_MAP_LAST_BIT-1))
+#define SECTION_NID_SHIFT		3
 
 static inline struct page *__section_mem_map_addr(struct mem_section *section)
 {
@@ -1316,6 +1476,13 @@ static inline int valid_section_nr(unsigned long nr)
 static inline int online_section(struct mem_section *section)
 {
 	return (section && (section->section_mem_map & SECTION_IS_ONLINE));
+}
+
+static inline int online_device_section(struct mem_section *section)
+{
+	unsigned long flags = SECTION_IS_ONLINE | SECTION_TAINT_ZONE_DEVICE;
+
+	return section && ((section->section_mem_map & flags) == flags);
 }
 
 static inline int online_section_nr(unsigned long nr)

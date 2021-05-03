@@ -225,7 +225,8 @@ struct tcp_sock {
 	u8	compressed_ack;
 	u8	dup_ack_counter:2,
 		tlp_retrans:1,	/* TLP is a retransmission */
-		unused:5;
+		fast_ack_mode:2, /* which fast ack mode ? */
+		unused:3;
 	u32	chrono_start;	/* Start time in jiffies of a TCP chrono */
 	u32	chrono_stat[3];	/* Time in jiffies for chrono_stat stats */
 	u8	chrono_type:2,	/* current chronograph type */
@@ -496,7 +497,8 @@ static inline u32 tcp_saved_syn_len(const struct saved_syn *saved_syn)
 }
 
 struct sk_buff *tcp_get_timestamping_opt_stats(const struct sock *sk,
-					       const struct sk_buff *orig_skb);
+					       const struct sk_buff *orig_skb,
+					       const struct sk_buff *ack_skb);
 
 static inline u16 tcp_mss_clamp(const struct tcp_sock *tp, u16 mss)
 {

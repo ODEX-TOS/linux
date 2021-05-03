@@ -71,7 +71,11 @@ static long ratelimit_pages = 32;
 /*
  * Start background writeback (via writeback threads) at this percentage
  */
+#ifdef CONFIG_ZEN_INTERACTIVE
+int dirty_background_ratio = 20;
+#else
 int dirty_background_ratio = 10;
+#endif
 
 /*
  * dirty_background_bytes starts at 0 (disabled) so that it is a function of
@@ -88,7 +92,11 @@ int vm_highmem_is_dirtyable;
 /*
  * The generator of dirty data starts writeback at this percentage
  */
+#ifdef CONFIG_ZEN_INTERACTIVE
+int vm_dirty_ratio = 50;
+#else
 int vm_dirty_ratio = 20;
+#endif
 
 /*
  * vm_dirty_bytes starts at 0 (disabled) so that it is a function of
@@ -2832,6 +2840,22 @@ void wait_on_page_writeback(struct page *page)
 	}
 }
 EXPORT_SYMBOL_GPL(wait_on_page_writeback);
+
+/*
+ * Wait for a page to complete writeback.  Returns -EINTR if we get a
+ * fatal signal while waiting.
+ */
+int wait_on_page_writeback_killable(struct page *page)
+{
+	while (PageWriteback(page)) {
+		trace_wait_on_page_writeback(page, page_mapping(page));
+		if (wait_on_page_bit_killable(page, PG_writeback))
+			return -EINTR;
+	}
+
+	return 0;
+}
+EXPORT_SYMBOL_GPL(wait_on_page_writeback_killable);
 
 /**
  * wait_for_stable_page() - wait for writeback to finish, if necessary.
