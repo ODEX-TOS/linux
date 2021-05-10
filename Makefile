@@ -1,8 +1,8 @@
 # SPDX-License-Identifier: GPL-2.0
 VERSION = 5
 PATCHLEVEL = 12
-SUBLEVEL = 1
-EXTRAVERSION = -tos2
+SUBLEVEL = 2
+EXTRAVERSION = -tos1
 NAME = Crossing the Sliðr
 
 # *DOCUMENTATION*
