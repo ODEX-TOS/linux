@@ -60,7 +60,7 @@ void irqtime_account_irq(struct task_struct *curr, unsigned int offset)
 	cpu = smp_processor_id();
 	delta = sched_clock_cpu(cpu) - irqtime->irq_start_time;
 	irqtime->irq_start_time += delta;
-	pc = preempt_count() - offset;
+	pc = irq_count() - offset;
 
 	/*
 	 * We do not account for softirq time from ksoftirqd here.
@@ -267,6 +267,26 @@ static inline u64 account_other_time(u64 max)
 	return accounted;
 }
 
+#ifdef CONFIG_64BIT
+static inline u64 read_sum_exec_runtime(struct task_struct *t)
+{
+	return t->se.sum_exec_runtime;
+}
+#else
+static u64 read_sum_exec_runtime(struct task_struct *t)
+{
+	u64 ns;
+	struct rq_flags rf;
+	struct rq *rq;
+
+	rq = task_rq_lock(t, &rf);
+	ns = t->se.sum_exec_runtime;
+	task_rq_unlock(rq, t, &rf);
+
+	return ns;
+}
+#endif
+
 /*
  * Accumulate raw cputime values of dead tasks (sig->[us]time) and live
  * tasks (sum on group iteration) belonging to @tsk's group.
@@ -401,7 +421,7 @@ void vtime_task_switch(struct task_struct *prev)
 
 void vtime_account_irq(struct task_struct *tsk, unsigned int offset)
 {
-	unsigned int pc = preempt_count() - offset;
+	unsigned int pc = irq_count() - offset;
 
 	if (pc & HARDIRQ_OFFSET) {
 		vtime_account_hardirq(tsk);
@@ -543,7 +563,7 @@ void cputime_adjust(struct task_cputime *curr, struct prev_cputime *prev,
 
 	/*
 	 * If either stime or utime are 0, assume all runtime is userspace.
-	 * Once a task gets some ticks, the monotonicy code at 'update:'
+	 * Once a task gets some ticks, the monotonicity code at 'update:'
 	 * will ensure things converge to the observed ratio.
 	 */
 	if (stime == 0) {
@@ -592,7 +612,7 @@ out:
 void task_cputime_adjusted(struct task_struct *p, u64 *ut, u64 *st)
 {
 	struct task_cputime cputime = {
-		.sum_exec_runtime = tsk_seruntime(p),
+		.sum_exec_runtime = p->se.sum_exec_runtime,
 	};
 
 	task_cputime(p, &cputime.utime, &cputime.stime);

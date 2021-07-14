@@ -385,8 +385,6 @@ struct core_state {
 	struct completion startup;
 };
 
-#define ANON_AND_FILE 2
-
 struct kioctx_table;
 struct mm_struct {
 	struct {
@@ -584,11 +582,11 @@ struct mm_struct {
 			/* the node of a global or per-memcg mm_struct list */
 			struct list_head list;
 #ifdef CONFIG_MEMCG
-			/* points to memcg of the owner task above */
+			/* points to the memcg of the owner task above */
 			struct mem_cgroup *memcg;
 #endif
 			/* whether this mm_struct has been used since the last walk */
-			nodemask_t nodes[ANON_AND_FILE];
+			nodemask_t nodes;
 #ifndef CONFIG_ARCH_WANT_BATCHED_UNMAP_TLB_FLUSH
 			/* the number of CPUs using this mm_struct */
 			atomic_t nr_cpus;
@@ -632,22 +630,14 @@ void lru_gen_free_mm_list(struct mem_cgroup *memcg);
 void lru_gen_migrate_mm(struct mm_struct *mm);
 #endif
 
-/*
- * Track the usage so mm_struct's that haven't been used since the last walk can
- * be skipped. This function adds a theoretical overhead to each context switch,
- * which hasn't been measurable.
- */
+/* Track the usage of each mm_struct so that we can skip inactive ones. */
 static inline void lru_gen_switch_mm(struct mm_struct *old, struct mm_struct *new)
 {
-	int file;
-
 	/* exclude init_mm, efi_mm, etc. */
 	if (!core_kernel_data((unsigned long)old)) {
 		VM_BUG_ON(old == &init_mm);
 
-		for (file = 0; file < ANON_AND_FILE; file++)
-			nodes_setall(old->lrugen.nodes[file]);
-
+		nodes_setall(old->lrugen.nodes);
 #ifndef CONFIG_ARCH_WANT_BATCHED_UNMAP_TLB_FLUSH
 		atomic_dec(&old->lrugen.nr_cpus);
 		VM_BUG_ON_MM(atomic_read(&old->lrugen.nr_cpus) < 0, old);

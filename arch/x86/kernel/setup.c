@@ -66,7 +66,7 @@ RESERVE_BRK(dmi_alloc, 65536);
 
 /*
  * Range of the BSS area. The size of the BSS area is determined
- * at link time, with RESERVE_BRK*() facility reserving additional
+ * at link time, with RESERVE_BRK() facility reserving additional
  * chunks.
  */
 unsigned long _brk_start = (unsigned long)__brk_base;
@@ -695,6 +695,30 @@ static void __init e820_add_kernel_range(void)
 	e820__range_add(start, size, E820_TYPE_RAM);
 }
 
+static unsigned reserve_low = CONFIG_X86_RESERVE_LOW << 10;
+
+static int __init parse_reservelow(char *p)
+{
+	unsigned long long size;
+
+	if (!p)
+		return -EINVAL;
+
+	size = memparse(p, &p);
+
+	if (size < 4096)
+		size = 4096;
+
+	if (size > 640*1024)
+		size = 640*1024;
+
+	reserve_low = size;
+
+	return 0;
+}
+
+early_param("reservelow", parse_reservelow);
+
 static void __init early_reserve_memory(void)
 {
 	/*
@@ -800,7 +824,6 @@ void __init setup_arch(char **cmdline_p)
 
 	idt_setup_early_traps();
 	early_cpu_init();
-	arch_init_ideal_nops();
 	jump_label_init();
 	static_call_init();
 	early_ioremap_init();
@@ -1021,8 +1044,8 @@ void __init setup_arch(char **cmdline_p)
 
 	/*
 	 * Need to conclude brk, before e820__memblock_setup()
-	 *  it could use memblock_find_in_range, could overlap with
-	 *  brk area.
+	 * it could use memblock_find_in_range, could overlap with
+	 * brk area.
 	 */
 	reserve_brk();
 
@@ -1071,7 +1094,7 @@ void __init setup_arch(char **cmdline_p)
 	 * BIOSes are know to corrupt low memory and several
 	 * hundred kilobytes are not worth complex detection what memory gets
 	 * clobbered. Moreover, on machines with SandyBridge graphics or in
-	 * setups that use crashkernel the entire 1M is anyway reserved.
+	 * setups that use crashkernel the entire 1M is reserved anyway.
 	 */
 	reserve_real_mode();
 

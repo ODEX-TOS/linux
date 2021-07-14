@@ -9,7 +9,7 @@
 #include <asm/realmode.h>
 #include <asm/tlbflush.h>
 #include <asm/crash.h>
-#include <asm/sev-es.h>
+#include <asm/sev.h>
 
 struct real_mode_header *real_mode_header;
 u32 *trampoline_cr4_features;
@@ -36,7 +36,7 @@ void __init reserve_real_mode(void)
 
 	/*
 	 * Unconditionally reserve the entire fisrt 1M, see comment in
-	 * setup_arch()
+	 * setup_arch().
 	 */
 	memblock_reserve(0, SZ_1M);
 }
@@ -105,7 +105,7 @@ static void __init setup_real_mode(void)
 		*ptr += phys_base;
 	}
 
-	/* Must be perfomed *after* relocation. */
+	/* Must be performed *after* relocation. */
 	trampoline_header = (struct trampoline_header *)
 		__va(real_mode_header->trampoline_header);
 

@@ -2702,7 +2702,7 @@ SYSCALL_DEFINE1(swapoff, const char __user *, specialfile)
 	err = 0;
 	atomic_inc(&proc_poll_event);
 	wake_up_interruptible(&proc_poll_wait);
-	/* stop tracking anon if the multigenerational lru is enabled */
+	/* stop tracking anon if the multigenerational lru is turned off */
 	lru_gen_set_state(false, false, true);
 
 out_dput:
@@ -2782,7 +2782,7 @@ static int swap_show(struct seq_file *swap, void *v)
 	unsigned int bytes, inuse;
 
 	if (si == SEQ_START_TOKEN) {
-		seq_puts(swap,"Filename\t\t\t\tType\t\tSize\t\tUsed\t\tPriority\n");
+		seq_puts(swap, "Filename\t\t\t\tType\t\tSize\t\tUsed\t\tPriority\n");
 		return 0;
 	}
 
@@ -3286,7 +3286,7 @@ SYSCALL_DEFINE2(swapon, const char __user *, specialfile, int, swap_flags)
 					 sizeof(long),
 					 GFP_KERNEL);
 
-	if (p->bdev &&(swap_flags & SWAP_FLAG_DISCARD) && swap_discardable(p)) {
+	if (p->bdev && (swap_flags & SWAP_FLAG_DISCARD) && swap_discardable(p)) {
 		/*
 		 * When discard is enabled for swap with no particular
 		 * policy flagged, we set all swap discard flags here in
@@ -3350,7 +3350,7 @@ SYSCALL_DEFINE2(swapon, const char __user *, specialfile, int, swap_flags)
 	mutex_unlock(&swapon_mutex);
 	atomic_inc(&proc_poll_event);
 	wake_up_interruptible(&proc_poll_wait);
-	/* start tracking anon if the multigenerational lru is enabled */
+	/* start tracking anon if the multigenerational lru is turned on */
 	lru_gen_set_state(true, false, true);
 
 	error = 0;

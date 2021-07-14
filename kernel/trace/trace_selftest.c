@@ -878,7 +878,7 @@ trace_selftest_startup_preemptoff(struct tracer *trace, struct trace_array *tr)
 	int ret;
 
 	/*
-	 * Now that the big kernel lock is no longer preemptable,
+	 * Now that the big kernel lock is no longer preemptible,
 	 * and this is called with the BKL held, it will always
 	 * fail. If preemption is already disabled, simply
 	 * pass the test. When the BKL is removed, or becomes
@@ -940,7 +940,7 @@ trace_selftest_startup_preemptirqsoff(struct tracer *trace, struct trace_array *
 	int ret;
 
 	/*
-	 * Now that the big kernel lock is no longer preemptable,
+	 * Now that the big kernel lock is no longer preemptible,
 	 * and this is called with the BKL held, it will always
 	 * fail. If preemption is already disabled, simply
 	 * pass the test. When the BKL is removed, or becomes
@@ -1052,15 +1052,10 @@ static int trace_wakeup_test_thread(void *data)
 {
 	/* Make this a -deadline thread */
 	static const struct sched_attr attr = {
-#ifdef CONFIG_SCHED_MUQSS
-		/* No deadline on MuQSS, use RR */
-		.sched_policy = SCHED_RR,
-#else
 		.sched_policy = SCHED_DEADLINE,
 		.sched_runtime = 100000ULL,
 		.sched_deadline = 10000000ULL,
 		.sched_period = 10000000ULL
-#endif
 	};
 	struct wakeup_test_data *x = data;
 

@@ -2,7 +2,6 @@
 /*
  * Copyright (C) 2015 Microchip Technology
  */
-#include <linux/version.h>
 #include <linux/module.h>
 #include <linux/netdevice.h>
 #include <linux/etherdevice.h>
@@ -1646,6 +1645,7 @@ static const struct ethtool_ops lan78xx_ethtool_ops = {
 	.get_strings	= lan78xx_get_strings,
 	.get_wol	= lan78xx_get_wol,
 	.set_wol	= lan78xx_set_wol,
+	.get_ts_info	= ethtool_op_get_ts_info,
 	.get_eee	= lan78xx_get_eee,
 	.set_eee	= lan78xx_set_eee,
 	.get_pauseparam	= lan78xx_get_pause,
@@ -2655,7 +2655,7 @@ static void lan78xx_terminate_urbs(struct lan78xx_net *dev)
 	while (!skb_queue_empty(&dev->rxq) &&
 	       !skb_queue_empty(&dev->txq) &&
 	       !skb_queue_empty(&dev->done)) {
-		schedule_msec_hrtimeout((UNLINK_TIMEOUT_MS));
+		schedule_timeout(msecs_to_jiffies(UNLINK_TIMEOUT_MS));
 		set_current_state(TASK_UNINTERRUPTIBLE);
 		netif_dbg(dev, ifdown, dev->net,
 			  "waited for %d urb completions\n", temp);

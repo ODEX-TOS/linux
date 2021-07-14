@@ -69,8 +69,8 @@ struct io_uring_params;
 struct clone_args;
 struct open_how;
 struct mount_attr;
-struct futex_waitv;
-struct futex_requeue;
+struct landlock_ruleset_attr;
+enum landlock_rule_type;
 
 #include <linux/types.h>
 #include <linux/aio_abi.h>
@@ -485,6 +485,8 @@ asmlinkage long sys_pipe2(int __user *fildes, int flags);
 /* fs/quota.c */
 asmlinkage long sys_quotactl(unsigned int cmd, const char __user *special,
 				qid_t id, void __user *addr);
+asmlinkage long sys_quotactl_path(unsigned int cmd, const char __user *mountpoint,
+				  qid_t id, void __user *addr);
 
 /* fs/readdir.c */
 asmlinkage long sys_getdents64(unsigned int fd,
@@ -622,17 +624,10 @@ asmlinkage long sys_set_robust_list(struct robust_list_head __user *head,
 				    size_t len);
 
 /* kernel/futex2.c */
-asmlinkage long sys_futex_wait(void __user *uaddr, unsigned int val, unsigned int flags,
+asmlinkage long sys_futex_wait(void __user *uaddr, u64 val, unsigned int flags,
 			       struct __kernel_timespec __user *timo);
 asmlinkage long sys_futex_wake(void __user *uaddr, unsigned int nr_wake,
 			       unsigned int flags);
-asmlinkage long sys_futex_waitv(struct futex_waitv __user *waiters,
-				unsigned int nr_futexes, unsigned int flags,
-				struct __kernel_timespec __user *timo);
-asmlinkage long sys_futex_requeue(struct futex_requeue __user *uaddr1,
-				  struct futex_requeue __user *uaddr2,
-				  unsigned int nr_wake, unsigned int nr_requeue,
-				  u64 cmpval, unsigned int flags);
 
 /* kernel/hrtimer.c */
 asmlinkage long sys_nanosleep(struct __kernel_timespec __user *rqtp,
@@ -1056,6 +1051,11 @@ asmlinkage long sys_pidfd_send_signal(int pidfd, int sig,
 				       siginfo_t __user *info,
 				       unsigned int flags);
 asmlinkage long sys_pidfd_getfd(int pidfd, int fd, unsigned int flags);
+asmlinkage long sys_landlock_create_ruleset(const struct landlock_ruleset_attr __user *attr,
+		size_t size, __u32 flags);
+asmlinkage long sys_landlock_add_rule(int ruleset_fd, enum landlock_rule_type rule_type,
+		const void __user *rule_attr, __u32 flags);
+asmlinkage long sys_landlock_restrict_self(int ruleset_fd, __u32 flags);
 
 /*
  * Architecture-specific system calls
@@ -1315,8 +1315,6 @@ int ksys_ipc(unsigned int call, int first, unsigned long second,
 	unsigned long third, void __user * ptr, long fifth);
 int compat_ksys_ipc(u32 call, int first, int second,
 	u32 third, u32 ptr, u32 fifth);
-long ksys_futex_wake(void __user *uaddr, unsigned long nr_wake,
-		     unsigned int flags);
 
 /*
  * The following kernel syscall equivalents are just wrappers to fs-internal

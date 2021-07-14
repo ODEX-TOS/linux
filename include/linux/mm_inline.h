@@ -83,10 +83,18 @@ static __always_inline enum lru_list page_lru(struct page *page)
 
 #ifdef CONFIG_LRU_GEN_ENABLED
 DECLARE_STATIC_KEY_TRUE(lru_gen_static_key);
-#define lru_gen_enabled() static_branch_likely(&lru_gen_static_key)
+
+static inline bool lru_gen_enabled(void)
+{
+	return static_branch_likely(&lru_gen_static_key);
+}
 #else
 DECLARE_STATIC_KEY_FALSE(lru_gen_static_key);
-#define lru_gen_enabled() static_branch_unlikely(&lru_gen_static_key)
+
+static inline bool lru_gen_enabled(void)
+{
+	return static_branch_unlikely(&lru_gen_static_key);
+}
 #endif
 
 /* We track at most MAX_NR_GENS generations using the sliding window technique. */
@@ -102,12 +110,12 @@ static inline int lru_tier_from_usage(int usage)
 }
 
 /* Return a proper index regardless whether we keep a full history of stats. */
-static inline int sid_from_seq_or_gen(int seq_or_gen)
+static inline int hist_from_seq_or_gen(int seq_or_gen)
 {
 	return seq_or_gen % NR_STAT_GENS;
 }
 
-/* The youngest and the second youngest generations are considered active. */
+/* The youngest and the second youngest generations are counted as active. */
 static inline bool lru_gen_is_active(struct lruvec *lruvec, int gen)
 {
 	unsigned long max_seq = READ_ONCE(lruvec->evictable.max_seq);
@@ -118,14 +126,14 @@ static inline bool lru_gen_is_active(struct lruvec *lruvec, int gen)
 	return gen == lru_gen_from_seq(max_seq) || gen == lru_gen_from_seq(max_seq - 1);
 }
 
-/* Update the sizes of the multigenerational lru. */
+/* Update the sizes of the multigenerational lru lists. */
 static inline void lru_gen_update_size(struct page *page, struct lruvec *lruvec,
 				       int old_gen, int new_gen)
 {
-	int file = page_is_file_lru(page);
+	int type = page_is_file_lru(page);
 	int zone = page_zonenum(page);
 	int delta = thp_nr_pages(page);
-	enum lru_list lru = LRU_FILE * file;
+	enum lru_list lru = type * LRU_FILE;
 	struct lrugen *lrugen = &lruvec->evictable;
 
 	lockdep_assert_held(&lruvec->lru_lock);
@@ -134,11 +142,11 @@ static inline void lru_gen_update_size(struct page *page, struct lruvec *lruvec,
 	VM_BUG_ON(old_gen == -1 && new_gen == -1);
 
 	if (old_gen >= 0)
-		WRITE_ONCE(lrugen->sizes[old_gen][file][zone],
-			   lrugen->sizes[old_gen][file][zone] - delta);
+		WRITE_ONCE(lrugen->sizes[old_gen][type][zone],
+			   lrugen->sizes[old_gen][type][zone] - delta);
 	if (new_gen >= 0)
-		WRITE_ONCE(lrugen->sizes[new_gen][file][zone],
-			   lrugen->sizes[new_gen][file][zone] + delta);
+		WRITE_ONCE(lrugen->sizes[new_gen][type][zone],
+			   lrugen->sizes[new_gen][type][zone] + delta);
 
 	if (old_gen < 0) {
 		if (lru_gen_is_active(lruvec, new_gen))
@@ -162,39 +170,38 @@ static inline void lru_gen_update_size(struct page *page, struct lruvec *lruvec,
 	VM_BUG_ON(lru_gen_is_active(lruvec, old_gen) && !lru_gen_is_active(lruvec, new_gen));
 }
 
-/* Add a page to a list of the multigenerational lru. Return true on success. */
+/* Add a page to one of the multigenerational lru lists. Return true on success. */
 static inline bool lru_gen_addition(struct page *page, struct lruvec *lruvec, bool front)
 {
 	int gen;
 	unsigned long old_flags, new_flags;
-	int file = page_is_file_lru(page);
+	int type = page_is_file_lru(page);
 	int zone = page_zonenum(page);
 	struct lrugen *lrugen = &lruvec->evictable;
 
-	if (PageUnevictable(page) || !lrugen->enabled[file])
+	if (PageUnevictable(page) || !lrugen->enabled[type])
 		return false;
 	/*
 	 * If a page is being faulted in, add it to the youngest generation.
 	 * try_walk_mm_list() may look at the size of the youngest generation to
 	 * determine if the aging is due.
 	 *
-	 * If a page can't be evicted immediately, i.e., a shmem page not in
-	 * swap cache, a dirty page waiting on writeback, or a page rejected by
-	 * evict_lru_gen_pages() due to races, dirty buffer heads, etc., add it
-	 * to the second oldest generation.
+	 * If a page can't be evicted immediately, i.e., an anon page not in
+	 * swap cache, a dirty file page under reclaim, or a page rejected by
+	 * evict_pages() due to races, dirty buffer heads, etc., add it to the
+	 * second oldest generation.
 	 *
-	 * If a page could be evicted immediately, i.e., deactivated, rotated by
-	 * writeback, or allocated for buffered io, add it to the oldest
-	 * generation.
+	 * If a page could be evicted immediately, i.e., a clean file page, add
+	 * it to the oldest generation.
 	 */
 	if (PageActive(page))
 		gen = lru_gen_from_seq(lrugen->max_seq);
-	else if ((!file && !PageSwapCache(page)) ||
+	else if ((!type && !PageSwapCache(page)) ||
 		 (PageReclaim(page) && (PageDirty(page) || PageWriteback(page))) ||
 		 (!PageReferenced(page) && PageWorkingset(page)))
-		gen = lru_gen_from_seq(lrugen->min_seq[file] + 1);
+		gen = lru_gen_from_seq(lrugen->min_seq[type] + 1);
 	else
-		gen = lru_gen_from_seq(lrugen->min_seq[file]);
+		gen = lru_gen_from_seq(lrugen->min_seq[type]);
 
 	do {
 		old_flags = READ_ONCE(page->flags);
@@ -202,21 +209,21 @@ static inline bool lru_gen_addition(struct page *page, struct lruvec *lruvec, bo
 
 		new_flags = (old_flags & ~(LRU_GEN_MASK | BIT(PG_active))) |
 			    ((gen + 1UL) << LRU_GEN_PGOFF);
-		/* see the comment in evict_lru_gen_pages() */
+		/* see the comment in evict_pages() */
 		if (!(old_flags & BIT(PG_referenced)))
 			new_flags &= ~(LRU_USAGE_MASK | LRU_TIER_FLAGS);
 	} while (cmpxchg(&page->flags, old_flags, new_flags) != old_flags);
 
 	lru_gen_update_size(page, lruvec, -1, gen);
 	if (front)
-		list_add(&page->lru, &lrugen->lists[gen][file][zone]);
+		list_add(&page->lru, &lrugen->lists[gen][type][zone]);
 	else
-		list_add_tail(&page->lru, &lrugen->lists[gen][file][zone]);
+		list_add_tail(&page->lru, &lrugen->lists[gen][type][zone]);
 
 	return true;
 }
 
-/* Delete a page from a list of the multigenerational lru. Return true on success. */
+/* Delete a page from one of the multigenerational lru lists. Return true on success. */
 static inline bool lru_gen_deletion(struct page *page, struct lruvec *lruvec)
 {
 	int gen;
@@ -244,60 +251,6 @@ static inline bool lru_gen_deletion(struct page *page, struct lruvec *lruvec)
 	return true;
 }
 
-/* Activate a page from page cache or swap cache after it's mapped. */
-static inline void lru_gen_activation(struct page *page, struct vm_area_struct *vma)
-{
-	if (!lru_gen_enabled())
-		return;
-
-	if (PageActive(page) || PageUnevictable(page) || vma_is_dax(vma) ||
-	    (vma->vm_flags & (VM_LOCKED | VM_SPECIAL)))
-		return;
-	/*
-	 * TODO: pass vm_fault to add_to_page_cache_lru() and
-	 * __read_swap_cache_async() so they can activate pages directly when in
-	 * the page fault path.
-	 */
-	activate_page(page);
-}
-
-/* Return -1 when a page is not on a list of the multigenerational lru. */
-static inline int page_lru_gen(struct page *page)
-{
-	return ((READ_ONCE(page->flags) & LRU_GEN_MASK) >> LRU_GEN_PGOFF) - 1;
-}
-
-/* This function works regardless whether the multigenerational lru is enabled. */
-static inline bool page_is_active(struct page *page, struct lruvec *lruvec)
-{
-	struct mem_cgroup *memcg;
-	int gen = page_lru_gen(page);
-	bool active = false;
-
-	VM_BUG_ON_PAGE(PageTail(page), page);
-
-	if (gen < 0)
-		return PageActive(page);
-
-	if (lruvec) {
-		VM_BUG_ON_PAGE(PageUnevictable(page), page);
-		VM_BUG_ON_PAGE(PageActive(page), page);
-		lockdep_assert_held(&lruvec->lru_lock);
-
-		return lru_gen_is_active(lruvec, gen);
-	}
-
-	rcu_read_lock();
-
-	memcg = page_memcg_rcu(page);
-	lruvec = mem_cgroup_lruvec(memcg, page_pgdat(page));
-	active = lru_gen_is_active(lruvec, gen);
-
-	rcu_read_unlock();
-
-	return active;
-}
-
 /* Return the level of usage of a page. See the comment on MAX_NR_TIERS. */
 static inline int page_tier_usage(struct page *page)
 {
@@ -308,27 +261,24 @@ static inline int page_tier_usage(struct page *page)
 }
 
 /* Increment the usage counter after a page is accessed via file descriptors. */
-static inline bool page_inc_usage(struct page *page)
+static inline void page_inc_usage(struct page *page)
 {
+	unsigned long usage;
 	unsigned long old_flags, new_flags;
-
-	if (!lru_gen_enabled())
-		return PageActive(page);
 
 	do {
 		old_flags = READ_ONCE(page->flags);
 
-		if (!(old_flags & BIT(PG_workingset)))
+		if (!(old_flags & BIT(PG_workingset))) {
 			new_flags = old_flags | BIT(PG_workingset);
-		else
-			new_flags = (old_flags & ~LRU_USAGE_MASK) | min(LRU_USAGE_MASK,
-				    (old_flags & LRU_USAGE_MASK) + BIT(LRU_USAGE_PGOFF));
+			continue;
+		}
 
-		if (old_flags == new_flags)
-			break;
-	} while (cmpxchg(&page->flags, old_flags, new_flags) != old_flags);
+		usage = (old_flags & LRU_USAGE_MASK) + BIT(LRU_USAGE_PGOFF);
 
-	return true;
+		new_flags = (old_flags & ~LRU_USAGE_MASK) | min(usage, LRU_USAGE_MASK);
+	} while (new_flags != old_flags &&
+		 cmpxchg(&page->flags, old_flags, new_flags) != old_flags);
 }
 
 #else /* CONFIG_LRU_GEN */
@@ -348,18 +298,8 @@ static inline bool lru_gen_deletion(struct page *page, struct lruvec *lruvec)
 	return false;
 }
 
-static inline void lru_gen_activation(struct page *page, struct vm_area_struct *vma)
+static inline void page_inc_usage(struct page *page)
 {
-}
-
-static inline bool page_is_active(struct page *page, struct lruvec *lruvec)
-{
-	return PageActive(page);
-}
-
-static inline bool page_inc_usage(struct page *page)
-{
-	return PageActive(page);
 }
 
 #endif /* CONFIG_LRU_GEN */

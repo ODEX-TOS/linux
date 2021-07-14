@@ -364,10 +364,13 @@
 440	common	process_madvise		sys_process_madvise
 441	common	epoll_pwait2		sys_epoll_pwait2
 442	common	mount_setattr		sys_mount_setattr
-443	common	futex_wait		sys_futex_wait
-444	common	futex_wake		sys_futex_wake
-445	common	futex_waitv		sys_futex_waitv
-446	common	futex_requeue		sys_futex_requeue
+# 443 reserved for quotactl_path
+444	common	landlock_create_ruleset	sys_landlock_create_ruleset
+445	common	landlock_add_rule	sys_landlock_add_rule
+446	common	landlock_restrict_self	sys_landlock_restrict_self
+447	common	futex_wait		sys_futex_wait
+448	common	futex_wake		sys_futex_wake
+449	common	futex_waitv		sys_futex_waitv
 
 #
 # Due to a historical design error, certain syscalls are numbered differently

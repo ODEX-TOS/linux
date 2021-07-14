@@ -19,7 +19,6 @@
 #include <linux/shmem_fs.h>
 #include <linux/uaccess.h>
 #include <linux/pkeys.h>
-#include <linux/mm_inline.h>
 
 #include <asm/elf.h>
 #include <asm/tlb.h>
@@ -662,6 +661,9 @@ static void show_smap_vma_flags(struct seq_file *m, struct vm_area_struct *vma)
 		[ilog2(VM_PKEY_BIT4)]	= "",
 #endif
 #endif /* CONFIG_ARCH_HAS_PKEYS */
+#ifdef CONFIG_HAVE_ARCH_USERFAULTFD_MINOR
+		[ilog2(VM_UFFD_MINOR)]	= "ui",
+#endif /* CONFIG_HAVE_ARCH_USERFAULTFD_MINOR */
 	};
 	size_t i;
 
@@ -1719,7 +1721,7 @@ static void gather_stats(struct page *page, struct numa_maps *md, int pte_dirty,
 	if (PageSwapCache(page))
 		md->swapcache += nr_pages;
 
-	if (PageUnevictable(page) || page_is_active(compound_head(page), NULL))
+	if (PageActive(page) || PageUnevictable(page))
 		md->active += nr_pages;
 
 	if (PageWriteback(page))

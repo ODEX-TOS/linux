@@ -328,7 +328,7 @@ static inline void swim_motor(struct swim __iomem *base,
 			if (swim_readbit(base, MOTOR_ON))
 				break;
 			set_current_state(TASK_INTERRUPTIBLE);
-			schedule_min_hrtimeout();
+			schedule_timeout(1);
 		}
 	} else if (action == OFF) {
 		swim_action(base, MOTOR_OFF);
@@ -347,7 +347,7 @@ static inline void swim_eject(struct swim __iomem *base)
 		if (!swim_readbit(base, DISK_IN))
 			break;
 		set_current_state(TASK_INTERRUPTIBLE);
-		schedule_min_hrtimeout();
+		schedule_timeout(1);
 	}
 	swim_select(base, RELAX);
 }
@@ -371,7 +371,7 @@ static inline int swim_step(struct swim __iomem *base)
 	for (wait = 0; wait < HZ; wait++) {
 
 		set_current_state(TASK_INTERRUPTIBLE);
-		schedule_min_hrtimeout();
+		schedule_timeout(1);
 
 		swim_select(base, RELAX);
 		if (!swim_readbit(base, STEP))
@@ -816,8 +816,6 @@ static int swim_floppy_init(struct swim_priv *swd)
 		}
 
 		swd->unit[drive].disk->queue = q;
-		blk_queue_bounce_limit(swd->unit[drive].disk->queue,
-				BLK_BOUNCE_HIGH);
 		swd->unit[drive].disk->queue->queuedata = &swd->unit[drive];
 		swd->unit[drive].swd = swd;
 	}

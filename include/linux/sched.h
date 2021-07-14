@@ -14,7 +14,6 @@
 #include <linux/pid.h>
 #include <linux/sem.h>
 #include <linux/shm.h>
-#include <linux/kcov.h>
 #include <linux/mutex.h>
 #include <linux/plist.h>
 #include <linux/hrtimer.h>
@@ -37,15 +36,12 @@
 #include <linux/kcsan.h>
 #include <asm/kmap_size.h>
 
-#ifdef CONFIG_SCHED_MUQSS
-#include <linux/skip_list.h>
-#endif
-
 /* task_struct member predeclarations (sorted alphabetically): */
 struct audit_context;
 struct backing_dev_info;
 struct bio_list;
 struct blk_plug;
+struct bpf_local_storage;
 struct capture_control;
 struct cfs_rq;
 struct fs_struct;
@@ -227,34 +223,6 @@ extern long schedule_timeout_interruptible(long timeout);
 extern long schedule_timeout_killable(long timeout);
 extern long schedule_timeout_uninterruptible(long timeout);
 extern long schedule_timeout_idle(long timeout);
-
-#if defined(CONFIG_HIGH_RES_TIMERS) && defined(CONFIG_SCHED_MUQSS)
-extern long schedule_msec_hrtimeout(long timeout);
-extern long schedule_min_hrtimeout(void);
-extern long schedule_msec_hrtimeout_interruptible(long timeout);
-extern long schedule_msec_hrtimeout_uninterruptible(long timeout);
-#else
-static inline long schedule_msec_hrtimeout(long timeout)
-{
-	return schedule_timeout(msecs_to_jiffies(timeout));
-}
-
-static inline long schedule_min_hrtimeout(void)
-{
-	return schedule_timeout(1);
-}
-
-static inline long schedule_msec_hrtimeout_interruptible(long timeout)
-{
-	return schedule_timeout_interruptible(msecs_to_jiffies(timeout));
-}
-
-static inline long schedule_msec_hrtimeout_uninterruptible(long timeout)
-{
-	return schedule_timeout_uninterruptible(msecs_to_jiffies(timeout));
-}
-#endif
-
 asmlinkage void schedule(void);
 extern void schedule_preempt_disabled(void);
 asmlinkage void preempt_schedule_irq(void);
@@ -709,10 +677,8 @@ struct task_struct {
 	unsigned int			flags;
 	unsigned int			ptrace;
 
-#if defined(CONFIG_SMP) || defined(CONFIG_SCHED_MUQSS)
-	int				on_cpu;
-#endif
 #ifdef CONFIG_SMP
+	int				on_cpu;
 	struct __call_single_node	wake_entry;
 #ifdef CONFIG_THREAD_INFO_IN_TASK
 	/* Current CPU: */
@@ -738,25 +704,10 @@ struct task_struct {
 	int				static_prio;
 	int				normal_prio;
 	unsigned int			rt_priority;
-#ifdef CONFIG_SCHED_MUQSS
-	int time_slice;
-	u64 deadline;
-	skiplist_node node; /* Skip list node */
-	u64 last_ran;
-	u64 sched_time; /* sched_clock time spent running */
-#ifdef CONFIG_SMT_NICE
-	int smt_bias; /* Policy/nice level bias across smt siblings */
-#endif
-#ifdef CONFIG_HOTPLUG_CPU
-	bool zerobound; /* Bound to CPU0 for hotplug */
-#endif
-	unsigned long rt_timeout;
-#else /* CONFIG_SCHED_MUQSS */
 
 	const struct sched_class	*sched_class;
 	struct sched_entity		se;
 	struct sched_rt_entity		rt;
-#endif
 #ifdef CONFIG_CGROUP_SCHED
 	struct task_group		*sched_task_group;
 #endif
@@ -898,6 +849,10 @@ struct task_struct {
 	/* Stalled due to lack of memory */
 	unsigned			in_memstall:1;
 #endif
+#ifdef CONFIG_PAGE_OWNER
+	/* Used by page_owner=on to detect recursion in page tracking. */
+	unsigned			in_page_owner:1;
+#endif
 
 	unsigned long			atomic_flags; /* Flags requiring atomic access. */
 
@@ -960,10 +915,6 @@ struct task_struct {
 #ifdef CONFIG_ARCH_HAS_SCALED_CPUTIME
 	u64				utimescaled;
 	u64				stimescaled;
-#endif
-#ifdef CONFIG_SCHED_MUQSS
-	/* Unbanked cpu time */
-	unsigned long utime_ns, stime_ns;
 #endif
 	u64				gtime;
 	struct prev_cputime		prev_cputime;
@@ -1105,6 +1056,9 @@ struct task_struct {
 	int				softirq_context;
 	int				irq_config;
 #endif
+#ifdef CONFIG_PREEMPT_RT
+	int				softirq_disable_cnt;
+#endif
 
 #ifdef CONFIG_LOCKDEP
 # define MAX_LOCK_DEPTH			48UL
@@ -1159,7 +1113,7 @@ struct task_struct {
 #ifdef CONFIG_CPUSETS
 	/* Protected by ->alloc_lock: */
 	nodemask_t			mems_allowed;
-	/* Seqence number to catch updates: */
+	/* Sequence number to catch updates: */
 	seqcount_spinlock_t		mems_allowed_seq;
 	int				cpuset_mem_spread_rotor;
 	int				cpuset_slab_spread_rotor;
@@ -1412,6 +1366,10 @@ struct task_struct {
 	/* Used by LSM modules for access restriction: */
 	void				*security;
 #endif
+#ifdef CONFIG_BPF_SYSCALL
+	/* Used by BPF task local storage */
+	struct bpf_local_storage __rcu	*bpf_storage;
+#endif
 
 #ifdef CONFIG_GCC_PLUGIN_STACKLEAK
 	unsigned long			lowest_stack;
@@ -1448,40 +1406,6 @@ struct task_struct {
 	 * Do not put anything below here!
 	 */
 };
-
-#ifdef CONFIG_SCHED_MUQSS
-#define tsk_seruntime(t)		((t)->sched_time)
-#define tsk_rttimeout(t)		((t)->rt_timeout)
-
-static inline void tsk_cpus_current(struct task_struct *p)
-{
-}
-
-void print_scheduler_version(void);
-
-static inline bool iso_task(struct task_struct *p)
-{
-	return (p->policy == SCHED_ISO);
-}
-#else /* CFS */
-#define tsk_seruntime(t)	((t)->se.sum_exec_runtime)
-#define tsk_rttimeout(t)	((t)->rt.timeout)
-
-static inline void tsk_cpus_current(struct task_struct *p)
-{
-	p->nr_cpus_allowed = current->nr_cpus_allowed;
-}
-
-static inline void print_scheduler_version(void)
-{
-	printk(KERN_INFO "CFS CPU scheduler.\n");
-}
-
-static inline bool iso_task(struct task_struct *p)
-{
-	return false;
-}
-#endif /* CONFIG_SCHED_MUQSS */
 
 static inline struct pid *task_pid(struct task_struct *task)
 {
@@ -1666,7 +1590,7 @@ extern struct pid *cad_pid;
 #define PF_SWAPWRITE		0x00800000	/* Allowed to write to swap */
 #define PF_NO_SETAFFINITY	0x04000000	/* Userland is not allowed to meddle with cpus_mask */
 #define PF_MCE_EARLY		0x08000000      /* Early kill for mce process policy */
-#define PF_MEMALLOC_NOCMA	0x10000000	/* All allocation request will have _GFP_MOVABLE cleared */
+#define PF_MEMALLOC_PIN		0x10000000	/* Allocation context constrained to zones which allow long term pinning. */
 #define PF_FREEZER_SKIP		0x40000000	/* Freezer should not count it as freezable */
 #define PF_SUSPEND_TASK		0x80000000      /* This thread called freeze_processes() and should not be frozen */
 

@@ -1,3 +1,5 @@
+.. SPDX-License-Identifier: GPL-2.0
+
 =====================
 Multigenerational LRU
 =====================
@@ -8,14 +10,14 @@ Build Options
 -------------
 :Required: Set ``CONFIG_LRU_GEN=y``.
 
+:Optional: Set ``CONFIG_LRU_GEN_ENABLED=y`` to turn the feature on by
+ default.
+
 :Optional: Change ``CONFIG_NR_LRU_GENS`` to a number ``X`` to support
  a maximum of ``X`` generations.
 
-:Optional: Change ``CONFIG_TIERS_PER_GEN`` to a number ``Y`` to support
- a maximum of ``Y`` tiers per generation.
-
-:Optional: Set ``CONFIG_LRU_GEN_ENABLED=y`` to turn the feature on by
- default.
+:Optional: Change ``CONFIG_TIERS_PER_GEN`` to a number ``Y`` to
+ support a maximum of ``Y`` tiers per generation.
 
 Runtime Options
 ---------------
@@ -43,12 +45,13 @@ milliseconds. The sizes of anon and file types are in pages.
 
 Recipes
 -------
-:Android on ARMv8.1+: ``X=4``, ``N=0``
+:Android on ARMv8.1+: ``X=4``, ``Y=3`` and ``N=0``.
 
 :Android on pre-ARMv8.1 CPUs: Not recommended due to the lack of
- ``ARM64_HW_AFDBM``
+ ``ARM64_HW_AFDBM``.
 
-:Laptops running Chrome on x86_64: ``X=7``, ``N=2``
+:Laptops and workstations running Chrome on x86_64: Use the default
+ values.
 
 :Working set estimation: Write ``+ memcg_id node_id gen [swappiness]``
  to ``/sys/kernel/debug/lru_gen`` to account referenced pages to
@@ -62,9 +65,9 @@ Recipes
  generations less than or equal to ``gen``. ``gen`` should be less
  than ``max_gen-1`` as ``max_gen`` and ``max_gen-1`` are active
  generations and therefore protected from the eviction. Use
- ``nr_to_reclaim`` to limit the number of pages to be evicted.
- Multiple command lines are supported, so does concatenation with
- delimiters ``,`` and ``;``.
+ ``nr_to_reclaim`` to limit the number of pages to evict. Multiple
+ command lines are supported, so does concatenation with delimiters
+ ``,`` and ``;``.
 
 Framework
 =========
@@ -73,24 +76,31 @@ generations. The youngest generation number is stored in ``max_seq``
 for both anon and file types as they are aged on an equal footing. The
 oldest generation numbers are stored in ``min_seq[2]`` separately for
 anon and file types as clean file pages can be evicted regardless of
-swap and write-back constraints. Generation numbers are truncated into
+swap and write-back constraints. These three variables are
+monotonically increasing. Generation numbers are truncated into
 ``order_base_2(CONFIG_NR_LRU_GENS+1)`` bits in order to fit into
 ``page->flags``. The sliding window technique is used to prevent
 truncated generation numbers from overlapping. Each truncated
 generation number is an index to an array of per-type and per-zone
 lists. Evictable pages are added to the per-zone lists indexed by
 ``max_seq`` or ``min_seq[2]`` (modulo ``CONFIG_NR_LRU_GENS``),
-depending on whether they are being faulted in.
+depending on their types.
 
 Each generation is then divided into multiple tiers. Tiers represent
 levels of usage from file descriptors only. Pages accessed N times via
-file descriptors belong to tier order_base_2(N). In contrast to moving
-across generations which requires the lru lock, moving across tiers
-only involves an atomic operation on ``page->flags`` and therefore has
-a negligible cost.
+file descriptors belong to tier order_base_2(N). Each generation
+contains at most CONFIG_TIERS_PER_GEN tiers, and they require
+additional CONFIG_TIERS_PER_GEN-2 bits in page->flags. In contrast to
+moving across generations which requires the lru lock for the list
+operations, moving across tiers only involves an atomic operation on
+``page->flags`` and therefore has a negligible cost. A feedback loop
+modeled after the PID controller monitors the refault rates across all
+tiers and decides when to activate pages from which tiers in the
+reclaim path.
 
-The workflow comprises two conceptually independent functions: the
-aging and the eviction.
+The framework comprises two conceptually independent components: the
+aging and the eviction, which can be invoked separately from user
+space for the purpose of working set estimation and proactive reclaim.
 
 Aging
 -----
@@ -101,9 +111,7 @@ After each round of scan, the aging increments ``max_seq``.
 
 The aging maintains either a system-wide ``mm_struct`` list or
 per-memcg ``mm_struct`` lists, and it only scans page tables of
-processes that have been scheduled since the last scan. Since scans
-are differential with respect to referenced pages, the cost is roughly
-proportional to their number.
+processes that have been scheduled since the last scan.
 
 The aging is due when both of ``min_seq[2]`` reaches ``max_seq-1``,
 assuming both anon and file types are reclaimable.
@@ -116,70 +124,13 @@ eviction scans the pages on the per-zone lists indexed by either of
 ``min_seq[2]``. When anon and file types are both available from the
 same generation, it selects the one that has a lower refault rate.
 
-During a scan, the eviction sorts pages according to their generation
-numbers, if the aging has found them referenced.  It also moves pages
-from the tiers that have higher refault rates than tier 0 to the next
-generation.
+During a scan, the eviction sorts pages according to their new
+generation numbers, if the aging has found them referenced. It also
+moves pages from the tiers that have higher refault rates than tier 0
+to the next generation.
 
 When it finds all the per-zone lists of a selected type are empty, the
 eviction increments ``min_seq[2]`` indexed by this selected type.
-
-Rationale
-=========
-Limitations of Current Implementation
--------------------------------------
-Notion of Active/Inactive
-~~~~~~~~~~~~~~~~~~~~~~~~~
-For servers equipped with hundreds of gigabytes of memory, the
-granularity of the active/inactive is too coarse to be useful for job
-scheduling. False active/inactive rates are relatively high, and thus
-the assumed savings may not materialize.
-
-For phones and laptops, executable pages are frequently evicted
-despite the fact that there are many less recently used anon pages.
-Major faults on executable pages cause ``janks`` (slow UI renderings)
-and negatively impact user experience.
-
-For ``lruvec``\s from different memcgs or nodes, comparisons are
-impossible due to the lack of a common frame of reference.
-
-Incremental Scans via ``rmap``
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-Each incremental scan picks up at where the last scan left off and
-stops after it has found a handful of unreferenced pages. For
-workloads using a large amount of anon memory, incremental scans lose
-the advantage under sustained memory pressure due to high ratios of
-the number of scanned pages to the number of reclaimed pages. On top
-of that, the ``rmap`` has poor memory locality due to its complex data
-structures. The combined effects typically result in a high amount of
-CPU usage in the reclaim path.
-
-Benefits of Multigenerational LRU
----------------------------------
-Notion of Generation Numbers
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-The notion of generation numbers introduces a quantitative approach to
-memory overcommit. A larger number of pages can be spread out across
-configurable generations, and thus they have relatively low false
-active/inactive rates. Each generation includes all pages that have
-been referenced since the last generation.
-
-Given an ``lruvec``, scans and the selections between anon and file
-types are all based on generation numbers, which are simple and yet
-effective. For different ``lruvec``\s, comparisons are still possible
-based on birth times of generations.
-
-Differential Scans via Page Tables
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-Each differential scan discovers all pages that have been referenced
-since the last scan. Specifically, it walks the ``mm_struct`` list
-associated with an ``lruvec`` to scan page tables of processes that
-have been scheduled since the last scan. The cost of each differential
-scan is roughly proportional to the number of referenced pages it
-discovers. Unless address spaces are extremely sparse, page tables
-usually have better memory locality than the ``rmap``. The end result
-is generally a significant reduction in CPU usage, for workloads
-using a large amount of anon memory.
 
 To-do List
 ==========
@@ -189,4 +140,4 @@ Support shadow page table scanning.
 
 NUMA Optimization
 -----------------
-Support NUMA policies and per-node RSS counters.
+Optimize page table scan for NUMA.

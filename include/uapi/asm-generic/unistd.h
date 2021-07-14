@@ -863,21 +863,24 @@ __SYSCALL(__NR_process_madvise, sys_process_madvise)
 __SC_COMP(__NR_epoll_pwait2, sys_epoll_pwait2, compat_sys_epoll_pwait2)
 #define __NR_mount_setattr 442
 __SYSCALL(__NR_mount_setattr, sys_mount_setattr)
+/* 443 is reserved for quotactl_path */
 
-#define __NR_futex_wait 443
-__SYSCALL(__NR_futex_wait, sys_futex_wait)
+#define __NR_landlock_create_ruleset 444
+__SYSCALL(__NR_landlock_create_ruleset, sys_landlock_create_ruleset)
+#define __NR_landlock_add_rule 445
+__SYSCALL(__NR_landlock_add_rule, sys_landlock_add_rule)
+#define __NR_landlock_restrict_self 446
+__SYSCALL(__NR_landlock_restrict_self, sys_landlock_restrict_self)
 
-#define __NR_futex_wake 444
+#define __NR_futex_wait 447
+__SC_COMP(__NR_futex_wait, sys_futex_wait, compat_sys_futex_wait)
+#define __NR_futex_wake 448
 __SYSCALL(__NR_futex_wake, sys_futex_wake)
-
-#define __NR_futex_waitv 445
+#define __NR_futex_wait 449
 __SC_COMP(__NR_futex_waitv, sys_futex_waitv, compat_sys_futex_waitv)
 
-#define __NR_futex_requeue 446
-__SC_COMP(__NR_futex_requeue, sys_futex_requeue, compat_sys_futex_requeue)
-
 #undef __NR_syscalls
-#define __NR_syscalls 447
+#define __NR_syscalls 450
 
 /*
  * 32 bit systems traditionally used different

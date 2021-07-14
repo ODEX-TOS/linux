@@ -216,7 +216,7 @@ static void task_sample_cputime(struct task_struct *p, u64 *samples)
 	u64 stime, utime;
 
 	task_cputime(p, &utime, &stime);
-	store_samples(samples, stime, utime, tsk_seruntime(p));
+	store_samples(samples, stime, utime, p->se.sum_exec_runtime);
 }
 
 static void proc_sample_cputime_atomic(struct task_cputime_atomic *at,
@@ -279,7 +279,7 @@ void thread_group_sample_cputime(struct task_struct *tsk, u64 *samples)
  * @tsk:	Task for which cputime needs to be started
  * @samples:	Storage for time samples
  *
- * The thread group cputime accouting is avoided when there are no posix
+ * The thread group cputime accounting is avoided when there are no posix
  * CPU timers armed. Before starting a timer it's required to check whether
  * the time accounting is active. If not, a full update of the atomic
  * accounting store needs to be done and the accounting enabled.
@@ -390,7 +390,7 @@ static int posix_cpu_timer_create(struct k_itimer *new_timer)
 	/*
 	 * If posix timer expiry is handled in task work context then
 	 * timer::it_lock can be taken without disabling interrupts as all
-	 * other locking happens in task context. This requires a seperate
+	 * other locking happens in task context. This requires a separate
 	 * lock class key otherwise regular posix timer expiry would record
 	 * the lock class being taken in interrupt context and generate a
 	 * false positive warning.
@@ -850,7 +850,7 @@ static void check_thread_timers(struct task_struct *tsk,
 	soft = task_rlimit(tsk, RLIMIT_RTTIME);
 	if (soft != RLIM_INFINITY) {
 		/* Task RT timeout is accounted in jiffies. RTTIME is usec */
-		unsigned long rttime = tsk_rttimeout(tsk) * (USEC_PER_SEC / HZ);
+		unsigned long rttime = tsk->rt.timeout * (USEC_PER_SEC / HZ);
 		unsigned long hard = task_rlimit_max(tsk, RLIMIT_RTTIME);
 
 		/* At the hard limit, send SIGKILL. No further action. */
@@ -1216,7 +1216,7 @@ static void handle_posix_cpu_timers(struct task_struct *tsk)
 		check_process_timers(tsk, &firing);
 
 		/*
-		 * The above timer checks have updated the exipry cache and
+		 * The above timer checks have updated the expiry cache and
 		 * because nothing can have queued or modified timers after
 		 * sighand lock was taken above it is guaranteed to be
 		 * consistent. So the next timer interrupt fastpath check
