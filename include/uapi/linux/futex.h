@@ -41,6 +41,40 @@
 #define FUTEX_CMP_REQUEUE_PI_PRIVATE	(FUTEX_CMP_REQUEUE_PI | \
 					 FUTEX_PRIVATE_FLAG)
 
+/* Size argument to futex2 syscall */
+#define FUTEX_8		0
+#define FUTEX_16	1
+#define FUTEX_32	2
+#define FUTEX_64	3
+
+#define FUTEX_SIZE_MASK	0x3
+
+#define FUTEX_SHARED_FLAG 8
+
+#define FUTEX_WAITV_MAX 128
+
+/**
+ * struct futex_waitv - A waiter for vectorized wait
+ * @val:   Expected value at uaddr
+ * @uaddr: User address to wait on
+ * @flags: Flags for this waiter
+ */
+struct futex_waitv {
+	void __user *uaddr;
+	unsigned int val;
+	unsigned int flags;
+};
+
+/**
+ * struct futex_requeue - Define an address and its flags for requeue operation
+ * @uaddr: User address of one of the requeue arguments
+ * @flags: Flags for this address
+ */
+struct futex_requeue {
+	void __user *uaddr;
+	unsigned int flags;
+};
+
 /*
  * Support for robust futexes: the kernel cleans up held futexes at
  * thread exit time.
