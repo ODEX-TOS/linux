@@ -1,7 +1,7 @@
 # SPDX-License-Identifier: GPL-2.0
 VERSION = 5
 PATCHLEVEL = 13
-SUBLEVEL = 3
+SUBLEVEL = 4
 EXTRAVERSION = -zen
 NAME = The City on the Edge of Forever
 
@@ -128,6 +128,11 @@ endif
 
 $(if $(word 2, $(KBUILD_EXTMOD)), \
 	$(error building multiple external modules is not supported))
+
+# Remove trailing slashes
+ifneq ($(filter %/, $(KBUILD_EXTMOD)),)
+KBUILD_EXTMOD := $(shell dirname $(KBUILD_EXTMOD).)
+endif
 
 export KBUILD_EXTMOD
 
@@ -996,6 +1001,7 @@ KBUILD_CFLAGS	+= -fno-strict-overflow
 
 # Make sure -fstack-check isn't enabled (like gentoo apparently did)
 KBUILD_CFLAGS  += -fno-stack-check
+
 
 
 # Prohibit date/time macros, which would make the build non-deterministic
