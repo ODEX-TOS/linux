@@ -4176,8 +4176,6 @@ static int scan_pages(struct lruvec *lruvec, struct scan_control *sc, long *nr_t
 	}
 
 	success = try_inc_min_seq(lruvec, type);
-	if (memcg && !mem_cgroup_is_root(memcg) && !cgroup_reclaim(sc) && success && file)
-		atomic_add_unless(&lrugen->priority, -1, 0);
 
 	item = current_is_kswapd() ? PGSCAN_KSWAPD : PGSCAN_DIRECT;
 	if (!cgroup_reclaim(sc)) {
@@ -4386,10 +4384,6 @@ static unsigned long get_nr_to_scan(struct lruvec *lruvec, struct scan_control *
 	struct lrugen *lrugen = &lruvec->evictable;
 	DEFINE_MAX_SEQ();
 	DEFINE_MIN_SEQ();
-
-	/* only proceed with memcgs at the front of the priority queue */
-	if (!cgroup_reclaim(sc) && atomic_read(&lrugen->priority) != DEF_PRIORITY)
-		return 0;
 
 	lru_add_drain();
 
