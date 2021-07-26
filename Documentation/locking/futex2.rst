@@ -4,7 +4,7 @@
 futex2
 ======
 
-:Author: André Almeida <andrealmeid@collabora.com>
+:Author: AndrÃ© Almeida <andrealmeid@collabora.com>
 
 futex, or fast user mutex, is a set of syscalls to allow userspace to create
 performant synchronization mechanisms, such as mutexes, semaphores and
@@ -29,7 +29,7 @@ The ``flag`` argument
 ---------------------
 
 The flag is used to specify the size of the futex word
-(FUTEX_[8, 16, 32, 64]). It's mandatory to define one, since there's no
+(FUTEX_[8, 16, 32]). It's mandatory to define one, since there's no
 default size.
 
 By default, the timeout uses a monotonic clock, but can be used as a realtime
@@ -44,8 +44,8 @@ need to be defined as shared and the flag FUTEX_SHARED_FLAG is used to set that.
 By default, the operation has no NUMA-awareness, meaning that the user can't
 choose the memory node where the kernel side futex data will be stored. The
 user can choose the node where it wants to operate by setting the
-FUTEX_NUMA_FLAG and using the following structure (where X can be 8, 16, 32 or
-64)::
+FUTEX_NUMA_FLAG and using the following structure (where X can be 8, 16, or
+32)::
 
  struct futexX_numa {
          __uX value;
@@ -76,13 +76,21 @@ all platforms, using an absolute timeout value.
 Implementation
 ==============
 
-Kernel side implementation is made on top of current futex codebase.
+The internal implementation follows a similar design to the original futex.
+Given that we want to replicate the same external behavior of current futex,
+this should be somewhat expected.
 
 Waiting
 -------
 
+For the wait operations, they are all treated as if you want to wait on N
+futexes, so the path for futex_wait and futex_waitv is the basically the same.
+For both syscalls, the first step is to prepare an internal list for the list
+of futexes to wait for (using struct futexv_head). For futex_wait() calls, this
+list will have a single object.
+
 We have a hash table, where waiters register themselves before sleeping. Then
-the wake function checks this table looking for waiters at uaddr. The hash
+the wake function checks this table looking for waiters at uaddr.  The hash
 bucket to be used is determined by a struct futex_key, that stores information
 to uniquely identify an address from a given process. Given the huge address
 space, there'll be hash collisions, so we store information to be later used on
@@ -90,9 +98,8 @@ collision treatment.
 
 First, for every futex we want to wait on, we check if (``*uaddr == val``).
 This check is done holding the bucket lock, so we are correctly serialized with
-any futex_wake() calls. If any waiter fails the check above we return. For
-futex_waitv() calls, we dequeue all futexes queue until this point. The check
-(``*uaddr == val``) can fail for two reasons:
+any futex_wake() calls. If any waiter fails the check above, we dequeue all
+futexes. The check (``*uaddr == val``) can fail for two reasons:
 
 - The values are different, and we return -EAGAIN. However, if while
   dequeueing we found that some futexes were awakened, we prioritize this
@@ -101,20 +108,23 @@ futex_waitv() calls, we dequeue all futexes queue until this point. The check
 - When trying to access the user address, we do so with page faults
   disabled because we are holding a bucket's spin lock (and can't sleep
   while holding a spin lock). If there's an error, it might be a page
-  fault, or an invalid address. We release the lock, dequeue everyone if it's a
-  futex_waitv() call (because it's illegal to sleep while there are futexes
-  enqueued, we could lose wakeups) and try again with page fault enabled. If we
-  succeed, this means that the address is valid, but we need to do all the work
-  again. For serialization reasons, we need to have the spin lock when getting
-  the user value. Additionally, for shared futexes, we also need to recalculate
-  the hash, since the underlying mapping mechanisms could have changed when
-  dealing with page fault.  If, even with page fault enabled, we can't access
-  the address, it means it's an invalid user address, and we return -EFAULT.
+  fault, or an invalid address. We release the lock, dequeue everyone
+  (because it's illegal to sleep while there are futexes enqueued, we
+  could lose wakeups) and try again with page fault enabled. If we
+  succeed, this means that the address is valid, but we need to do
+  all the work again. For serialization reasons, we need to have the
+  spin lock when getting the user value. Additionally, for shared
+  futexes, we also need to recalculate the hash, since the underlying
+  mapping mechanisms could have changed when dealing with page fault.
+  If, even with page fault enabled, we can't access the address, it
+  means it's an invalid user address, and we return -EFAULT. For this
+  case, we prioritize the error, even if some futexes were awaken.
 
 If the check is OK, they are enqueued on a linked list in our bucket, and
 proceed to the next one. If all waiters succeed, we put the thread to sleep
 until a futex_wake() call, timeout expires or we get a signal. After waking up,
-we dequeue everyone, and check if some futex was awakened.
+we dequeue everyone, and check if some futex was awakened. This dequeue is done
+by iteratively walking at each element of struct futex_head list.
 
 All enqueuing/dequeuing operations requires to hold the bucket lock, to avoid
 racing while modifying the list.
@@ -176,7 +186,10 @@ Now, for uniquely identifying a shared futex:
   page.
 
 Note that members of futex_key don't have any particular meaning after they
-are part of the struct - they are just bytes to identify a futex. 
+are part of the struct - they are just bytes to identify a futex.  Given that,
+we don't need to use a particular name or type that matches the original data,
+we only need to care about the bitsize of each component and make both private
+and shared fit in the same memory space.
 
 Source code documentation
 =========================

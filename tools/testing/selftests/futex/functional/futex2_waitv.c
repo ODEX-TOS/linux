@@ -7,10 +7,10 @@
  *	Test waitv/wake mechanism of futex2, using 32bit sized futexes.
  *
  * AUTHOR
- *	André Almeida <andrealmeid@collabora.com>
+ *	AndrÃ© Almeida <andrealmeid@collabora.com>
  *
  * HISTORY
- *      2021-Feb-5: Initial version by André <andrealmeid@collabora.com>
+ *      2021-Feb-5: Initial version by AndrÃ© <andrealmeid@collabora.com>
  *
  *****************************************************************************/
 
@@ -27,6 +27,7 @@
 #include "logging.h"
 
 #define TEST_NAME "futex2-wait"
+#define timeout_ns  1000000000
 #define WAKE_WAIT_US 10000
 #define NR_FUTEXES 30
 struct futex_waitv waitv[NR_FUTEXES];
@@ -54,11 +55,13 @@ void *waiterfn(void *arg)
 
 	res = futex2_waitv(waitv, NR_FUTEXES, 0, &to64);
 	if (res < 0) {
-		ksft_test_result_fail("futex2_waitv returned: %d %s\n",
-				      errno, strerror(errno));
+		ksft_test_result_fail("futex2_waitv private returned: %d %s\n",
+				      res ? errno : res,
+				      res ? strerror(errno) : "");
 	} else if (res != NR_FUTEXES - 1) {
-		ksft_test_result_fail("futex2_waitv returned: %d, expecting %d\n",
-				      res, NR_FUTEXES - 1);
+		ksft_test_result_fail("futex2_waitv private returned: %d %s\n",
+				      res ? errno : res,
+				      res ? strerror(errno) : "");
 	}
 
 	return NULL;
@@ -106,12 +109,20 @@ int main(int argc, char *argv[])
 
 	res = futex2_wake(waitv[NR_FUTEXES - 1].uaddr, 1, FUTEX_32);
 	if (res != 1) {
+<<<<<<< HEAD
 		ksft_test_result_fail("futex2_wake private returned: %d %s\n",
+=======
+		ksft_test_result_fail("futex2_waitv private returned: %d %s\n",
+>>>>>>> v5.13.5-zen1
 				      res ? errno : res,
 				      res ? strerror(errno) : "");
 		ret = RET_FAIL;
 	} else {
+<<<<<<< HEAD
 		ksft_test_result_pass("futex2_wake private succeeds\n");
+=======
+		ksft_test_result_pass("futex2_waitv private succeeds\n");
+>>>>>>> v5.13.5-zen1
 	}
 
 	/* Shared waitv */

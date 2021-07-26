@@ -123,6 +123,19 @@ struct scan_control {
 	/* The file pages on the current node are dangerously low */
 	unsigned int file_is_tiny:1;
 
+	/*
+	 * The clean file pages on the current node won't be reclaimed when
+	 * their amount is below vm.clean_low_kbytes *unless* we threaten
+	 * to OOM or have no free swap space or vm.swappiness=0.
+	 */
+	unsigned int clean_below_low:1;
+
+	/*
+	 * The clean file pages on the current node won't be reclaimed when
+	 * their amount is below vm.clean_min_kbytes.
+	 */
+	unsigned int clean_below_min:1;
+
 	/* Allocation order */
 	s8 order;
 
@@ -168,6 +181,17 @@ struct scan_control {
 #else
 #define prefetchw_prev_lru_page(_page, _base, _field) do { } while (0)
 #endif
+
+#if CONFIG_CLEAN_LOW_KBYTES < 0
+#error "CONFIG_CLEAN_LOW_KBYTES must be >= 0"
+#endif
+
+#if CONFIG_CLEAN_MIN_KBYTES < 0
+#error "CONFIG_CLEAN_MIN_KBYTES must be >= 0"
+#endif
+
+unsigned long sysctl_clean_low_kbytes __read_mostly = CONFIG_CLEAN_LOW_KBYTES;
+unsigned long sysctl_clean_min_kbytes __read_mostly = CONFIG_CLEAN_MIN_KBYTES;
 
 /*
  * From 0 .. 200.  Higher means more swappy.
@@ -2591,6 +2615,16 @@ static void get_scan_count(struct lruvec *lruvec, struct scan_control *sc,
 	}
 
 	/*
+	 * Force-scan anon if clean file pages is under vm.clean_min_kbytes
+	 * or vm.clean_low_kbytes (unless the swappiness setting
+	 * disagrees with swapping).
+	 */
+	if ((sc->clean_below_low || sc->clean_below_min) && swappiness) {
+		scan_balance = SCAN_ANON;
+		goto out;
+	}
+
+	/*
 	 * If there is enough inactive page cache, we do not reclaim
 	 * anything from the anonymous working right now.
 	 */
@@ -2725,6 +2759,13 @@ out:
 			/* Look ma, no brain */
 			BUG();
 		}
+
+		/*
+		 * Don't reclaim clean file pages when their amount is below
+		 * vm.clean_min_kbytes.
+		 */
+		if (file && sc->clean_below_min)
+			scan = 0;
 
 		nr[lru] = scan;
 	}
@@ -4135,6 +4176,8 @@ static int scan_pages(struct lruvec *lruvec, struct scan_control *sc, long *nr_t
 	}
 
 	success = try_inc_min_seq(lruvec, type);
+	if (memcg && !mem_cgroup_is_root(memcg) && !cgroup_reclaim(sc) && success && type)
+		atomic_add_unless(&lrugen->priority, -1, 0);
 
 	item = current_is_kswapd() ? PGSCAN_KSWAPD : PGSCAN_DIRECT;
 	if (!cgroup_reclaim(sc)) {
@@ -4344,6 +4387,10 @@ static unsigned long get_nr_to_scan(struct lruvec *lruvec, struct scan_control *
 	DEFINE_MAX_SEQ();
 	DEFINE_MIN_SEQ();
 
+	/* only proceed with memcgs at the front of the priority queue */
+	if (!cgroup_reclaim(sc) && atomic_read(&lrugen->priority) != DEF_PRIORITY)
+		return 0;
+
 	lru_add_drain();
 
 	for (type = !swappiness; type < ANON_AND_FILE; type++) {
@@ -4454,10 +4501,14 @@ static void lru_gen_age_node(struct pglist_data *pgdat, struct scan_control *sc)
 	memcg = mem_cgroup_iter(NULL, NULL, NULL);
 	do {
 		struct lruvec *lruvec = mem_cgroup_lruvec(memcg, pgdat);
+		struct lrugen *lrugen = &lruvec->evictable;
 
 		if (!mem_cgroup_below_min(memcg) &&
 		    (!mem_cgroup_below_low(memcg) || sc->memcg_low_reclaim))
 			try_walk_mm_list(lruvec, sc);
+
+		if (memcg && !mem_cgroup_is_root(memcg) && sc->priority != DEF_PRIORITY)
+			atomic_add_unless(&lrugen->priority, 1, DEF_PRIORITY);
 
 		cond_resched();
 	} while ((memcg = mem_cgroup_iter(NULL, memcg, NULL)));
@@ -4863,7 +4914,7 @@ static int lru_gen_seq_show(struct seq_file *m, void *v)
 		seq_printf(m, "memcg %5hu %s\n", mem_cgroup_id(memcg), (char *)m->private);
 	}
 
-	seq_printf(m, " node %5d\n", nid);
+	seq_printf(m, " node %5d %10d\n", nid, atomic_read(&lrugen->priority));
 
 	seq = full ? (max_seq < MAX_NR_GENS ? 0 : max_seq - MAX_NR_GENS + 1) :
 		     min(min_seq[0], min_seq[1]);
@@ -5088,6 +5139,8 @@ void lru_gen_init_lruvec(struct lruvec *lruvec)
 	lrugen->max_seq = MIN_NR_GENS + 1;
 	lrugen->enabled[0] = lru_gen_enabled() && lru_gen_nr_swapfiles;
 	lrugen->enabled[1] = lru_gen_enabled();
+
+	atomic_set(&lrugen->priority, DEF_PRIORITY);
 
 	for (i = 0; i <= MIN_NR_GENS + 1; i++)
 		lrugen->timestamps[i] = jiffies;
@@ -5412,6 +5465,34 @@ again:
 	nr_scanned = sc->nr_scanned;
 
 	prepare_scan_count(pgdat, sc);
+
+	/*
+	 * Check the number of clean file pages to protect them from
+	 * reclaiming if their amount is below the specified.
+	 */
+	if (sysctl_clean_low_kbytes || sysctl_clean_min_kbytes) {
+		unsigned long reclaimable_file, dirty, clean;
+
+		reclaimable_file =
+			node_page_state(pgdat, NR_ACTIVE_FILE) +
+			node_page_state(pgdat, NR_INACTIVE_FILE) +
+			node_page_state(pgdat, NR_ISOLATED_FILE);
+		dirty = node_page_state(pgdat, NR_FILE_DIRTY);
+		/*
+		 * node_page_state() sum can go out of sync since
+		 * all the values are not read at once.
+		 */
+		if (likely(reclaimable_file > dirty))
+			clean = (reclaimable_file - dirty) << (PAGE_SHIFT - 10);
+		else
+			clean = 0;
+
+		sc->clean_below_low = clean < sysctl_clean_low_kbytes;
+		sc->clean_below_min = clean < sysctl_clean_min_kbytes;
+	} else {
+		sc->clean_below_low = false;
+		sc->clean_below_min = false;
+	}
 
 	shrink_node_memcgs(pgdat, sc);
 
