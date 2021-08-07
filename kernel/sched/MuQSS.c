@@ -4672,7 +4672,7 @@ static int sched_dynamic_mode(const char *str)
 	if (!strcmp(str, "full"))
 		return preempt_dynamic_full;
 
-	return -1;
+	return -EINVAL;
 }
 
 static void sched_dynamic_update(int mode)
