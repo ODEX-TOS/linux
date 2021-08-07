@@ -685,18 +685,14 @@ static inline unsigned int group_first_cpu(struct sched_group *group)
 }
 
 
-#if defined(CONFIG_SCHED_DEBUG) && defined(CONFIG_SYSCTL)
-void register_sched_domain_sysctl(void);
+#ifdef CONFIG_SCHED_DEBUG
+void update_sched_domain_debugfs(void);
 void dirty_sched_domain_sysctl(int cpu);
-void unregister_sched_domain_sysctl(void);
 #else
-static inline void register_sched_domain_sysctl(void)
+static inline void update_sched_domain_debugfs(void)
 {
 }
 static inline void dirty_sched_domain_sysctl(int cpu)
-{
-}
-static inline void unregister_sched_domain_sysctl(void)
 {
 }
 #endif
@@ -1080,5 +1076,7 @@ static inline u64 thermal_load_avg(struct rq *rq)
 #ifdef CONFIG_RCU_TORTURE_TEST
 extern int sysctl_sched_rt_runtime;
 #endif
+
+
 
 #endif /* MUQSS_SCHED_H */
