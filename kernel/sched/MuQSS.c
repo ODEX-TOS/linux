@@ -3769,7 +3769,6 @@ void scheduler_tick(void)
 	task_tick(rq);
 	rq->last_scheduler_tick = rq->last_jiffy;
 	rq->last_tick = rq->clock;
-	psi_task_tick(rq);
 	perf_event_task_tick();
 	sched_stop_tick(rq, cpu);
 }
