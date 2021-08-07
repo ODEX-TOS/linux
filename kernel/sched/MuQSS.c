@@ -246,12 +246,6 @@ static int total_runqueues __read_mostly = 1;
 
 static cpumask_t cpu_idle_map ____cacheline_aligned_in_smp;
 
-struct rq *cpu_rq(int cpu)
-{
-	return &per_cpu(runqueues, (cpu));
-}
-#define cpu_curr(cpu)		(cpu_rq(cpu)->curr)
-
 /*
  * For asym packing, by default the lower numbered cpu has higher priority.
  */
