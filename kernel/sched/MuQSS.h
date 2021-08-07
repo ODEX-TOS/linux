@@ -701,6 +701,8 @@ static inline void unregister_sched_domain_sysctl(void)
 }
 #endif
 
+extern int sched_update_scaling(void);
+
 extern void flush_smp_call_function_from_idle(void);
 
 extern void set_cpus_allowed_common(struct task_struct *p, const struct cpumask *new_mask, u32 flags);
