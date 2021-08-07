@@ -1620,6 +1620,10 @@ static inline bool is_cpu_allowed(struct task_struct *p, int cpu)
 	if (kthread_is_per_cpu(p))
 		return cpu_online(cpu);
 
+	/* Regular kernel threads don't get to stay during offline. */
+	if (cpu_dying(cpu))
+		return false;
+
 	/* But are allowed during online. */
 	return cpu_online(cpu);
 }
