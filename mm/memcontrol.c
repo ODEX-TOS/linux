@@ -3394,7 +3394,8 @@ static unsigned long mem_cgroup_usage(struct mem_cgroup *memcg, bool swap)
 	unsigned long val;
 
 	if (mem_cgroup_is_root(memcg)) {
-		cgroup_rstat_flush(memcg->css.cgroup);
+		/* mem_cgroup_threshold() calls here from irqsafe context */
+		cgroup_rstat_flush_irqsafe(memcg->css.cgroup);
 		val = memcg_page_state(memcg, NR_FILE_PAGES) +
 			memcg_page_state(memcg, NR_ANON_MAPPED);
 		if (swap)
@@ -6010,7 +6011,7 @@ static void mem_cgroup_attach(struct cgroup_taskset *tset)
 	struct task_struct *task = NULL;
 
 	cgroup_taskset_for_each_leader(task, css, tset)
-		;
+		break;
 
 	if (!task)
 		return;

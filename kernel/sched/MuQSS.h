@@ -382,9 +382,11 @@ extern struct rq *uprq;
 #define cpu_curr(cpu)	((uprq)->curr)
 #else /* CONFIG_SMP */
 DECLARE_PER_CPU_SHARED_ALIGNED(struct rq, runqueues);
+#define cpu_rq(cpu)		(&per_cpu(runqueues, (cpu)))
 #define this_rq()		this_cpu_ptr(&runqueues)
-#define raw_rq()		raw_cpu_ptr(&runqueues)
 #define task_rq(p)		cpu_rq(task_cpu(p))
+#define cpu_curr(cpu)		(cpu_rq(cpu)->curr)
+#define raw_rq()		raw_cpu_ptr(&runqueues)
 #endif /* CONFIG_SMP */
 
 static inline int task_current(struct rq *rq, struct task_struct *p)
@@ -685,21 +687,19 @@ static inline unsigned int group_first_cpu(struct sched_group *group)
 }
 
 
-#if defined(CONFIG_SCHED_DEBUG) && defined(CONFIG_SYSCTL)
-void register_sched_domain_sysctl(void);
+#ifdef CONFIG_SCHED_DEBUG
+void update_sched_domain_debugfs(void);
 void dirty_sched_domain_sysctl(int cpu);
-void unregister_sched_domain_sysctl(void);
 #else
-static inline void register_sched_domain_sysctl(void)
+static inline void update_sched_domain_debugfs(void)
 {
 }
 static inline void dirty_sched_domain_sysctl(int cpu)
 {
 }
-static inline void unregister_sched_domain_sysctl(void)
-{
-}
 #endif
+
+extern int sched_update_scaling(void);
 
 extern void flush_smp_call_function_from_idle(void);
 
@@ -1054,8 +1054,14 @@ static inline bool is_per_cpu_kthread(struct task_struct *p)
 }
 #endif
 
-void swake_up_all_locked(struct swait_queue_head *q);
-void __prepare_to_swait(struct swait_queue_head *q, struct swait_queue *wait);
+extern void swake_up_all_locked(struct swait_queue_head *q);
+extern void __prepare_to_swait(struct swait_queue_head *q, struct swait_queue *wait);
+
+#ifdef CONFIG_PREEMPT_DYNAMIC
+extern int preempt_dynamic_mode;
+extern int sched_dynamic_mode(const char *str);
+extern void sched_dynamic_update(int mode);
+#endif
 
 /* pelt.h compat CONFIG_SCHED_THERMAL_PRESSURE impossible with MUQSS */
 static inline int
@@ -1072,5 +1078,6 @@ static inline u64 thermal_load_avg(struct rq *rq)
 #ifdef CONFIG_RCU_TORTURE_TEST
 extern int sysctl_sched_rt_runtime;
 #endif
+
 
 #endif /* MUQSS_SCHED_H */
