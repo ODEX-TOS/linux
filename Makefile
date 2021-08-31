@@ -1,9 +1,9 @@
 # SPDX-License-Identifier: GPL-2.0
 VERSION = 5
 PATCHLEVEL = 13
-SUBLEVEL = 10
-EXTRAVERSION = -tos1
-NAME = The City on the Edge of Forever
+SUBLEVEL = 13
+EXTRAVERSION = -arch1
+NAME = Opossums on Parade
 
 # *DOCUMENTATION*
 # To see a list of typical targets execute "make help"
