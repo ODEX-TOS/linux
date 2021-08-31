@@ -11,7 +11,6 @@
  *
  * HISTORY
  *      2009-Nov-6: Initial version by Darren Hart <dvhart@linux.intel.com>
- *      2021-Feb-5: Add futex2 test by AndrÃ© <andrealmeid@collabora.com>
  *
  *****************************************************************************/
 
@@ -21,7 +20,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <time.h>
-#include "futex2test.h"
+#include "futextest.h"
 #include "logging.h"
 
 #define TEST_NAME "futex-wait-timeout"
@@ -41,8 +40,7 @@ void usage(char *prog)
 int main(int argc, char *argv[])
 {
 	futex_t f1 = FUTEX_INITIALIZER;
-	struct timespec to = {.tv_sec = 0, .tv_nsec = timeout_ns};
-	struct timespec64 to64;
+	struct timespec to;
 	int res, ret = RET_PASS;
 	int c;
 
@@ -67,60 +65,22 @@ int main(int argc, char *argv[])
 	}
 
 	ksft_print_header();
-	ksft_set_plan(3);
+	ksft_set_plan(1);
 	ksft_print_msg("%s: Block on a futex and wait for timeout\n",
 	       basename(argv[0]));
 	ksft_print_msg("\tArguments: timeout=%ldns\n", timeout_ns);
 
+	/* initialize timeout */
+	to.tv_sec = 0;
+	to.tv_nsec = timeout_ns;
+
 	info("Calling futex_wait on f1: %u @ %p\n", f1, &f1);
 	res = futex_wait(&f1, f1, &to, FUTEX_PRIVATE_FLAG);
 	if (!res || errno != ETIMEDOUT) {
-		ksft_test_result_fail("futex_wait returned %d\n", ret < 0 ? errno : ret);
+		fail("futex_wait returned %d\n", ret < 0 ? errno : ret);
 		ret = RET_FAIL;
-	} else {
-		ksft_test_result_pass("futex_wait timeout succeeds\n");
 	}
 
-	/* setting absolute monotonic timeout for futex2 */
-	if (gettime64(CLOCK_MONOTONIC, &to64))
-		error("gettime64 failed\n", errno);
-
-	to64.tv_nsec += timeout_ns;
-
-	if (to64.tv_nsec >= 1000000000) {
-		to64.tv_sec++;
-		to64.tv_nsec -= 1000000000;
-	}
-
-	info("Calling futex2_wait on f1: %u @ %p\n", f1, &f1);
-	res = futex2_wait(&f1, f1, FUTEX_32, &to64);
-	if (!res || errno != ETIMEDOUT) {
-		ksft_test_result_fail("futex2_wait monotonic returned %d\n", ret < 0 ? errno : ret);
-		ret = RET_FAIL;
-	} else {
-		ksft_test_result_pass("futex2_wait monotonic timeout succeeds\n");
-	}
-
-	/* setting absolute realtime timeout for futex2 */
-	if (gettime64(CLOCK_REALTIME, &to64))
-		error("gettime64 failed\n", errno);
-
-	to64.tv_nsec += timeout_ns;
-
-	if (to64.tv_nsec >= 1000000000) {
-		to64.tv_sec++;
-		to64.tv_nsec -= 1000000000;
-	}
-
-	info("Calling futex2_wait on f1: %u @ %p\n", f1, &f1);
-	res = futex2_wait(&f1, f1, FUTEX_32 | FUTEX_CLOCK_REALTIME, &to64);
-	if (!res || errno != ETIMEDOUT) {
-		ksft_test_result_fail("futex2_wait realtime returned %d\n", ret < 0 ? errno : ret);
-		ret = RET_FAIL;
-	} else {
-		ksft_test_result_pass("futex2_wait realtime timeout succeeds\n");
-	}
-
-	ksft_print_cnts();
+	print_result(TEST_NAME, ret);
 	return ret;
 }

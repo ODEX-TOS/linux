@@ -109,20 +109,12 @@ int main(int argc, char *argv[])
 
 	res = futex2_wake(waitv[NR_FUTEXES - 1].uaddr, 1, FUTEX_32);
 	if (res != 1) {
-<<<<<<< HEAD
-		ksft_test_result_fail("futex2_wake private returned: %d %s\n",
-=======
 		ksft_test_result_fail("futex2_waitv private returned: %d %s\n",
->>>>>>> v5.13.5-zen1
 				      res ? errno : res,
 				      res ? strerror(errno) : "");
 		ret = RET_FAIL;
 	} else {
-<<<<<<< HEAD
-		ksft_test_result_pass("futex2_wake private succeeds\n");
-=======
 		ksft_test_result_pass("futex2_waitv private succeeds\n");
->>>>>>> v5.13.5-zen1
 	}
 
 	/* Shared waitv */

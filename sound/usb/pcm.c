@@ -29,21 +29,15 @@
 #define SUBSTREAM_FLAG_SYNC_EP_STARTED	1
 
 /* return the estimated delay based on USB frame counters */
-static snd_pcm_uframes_t snd_usb_pcm_delay(struct snd_usb_substream *subs,
-					   struct snd_pcm_runtime *runtime)
+snd_pcm_uframes_t snd_usb_pcm_delay(struct snd_usb_substream *subs,
+				    unsigned int rate)
 {
-	unsigned int current_frame_number;
-	unsigned int frame_diff;
+	int current_frame_number;
+	int frame_diff;
 	int est_delay;
-	int queued;
 
-	if (subs->direction == SNDRV_PCM_STREAM_PLAYBACK) {
-		queued = bytes_to_frames(runtime, subs->inflight_bytes);
-		if (!queued)
-			return 0;
-	} else if (!subs->running) {
-		return 0;
-	}
+	if (!subs->last_delay)
+		return 0; /* short path */
 
 	current_frame_number = usb_get_current_frame_number(subs->dev);
 	/*
@@ -55,14 +49,14 @@ static snd_pcm_uframes_t snd_usb_pcm_delay(struct snd_usb_substream *subs,
 
 	/* Approximation based on number of samples per USB frame (ms),
 	   some truncation for 44.1 but the estimate is good enough */
-	est_delay = frame_diff * runtime->rate / 1000;
+	est_delay =  frame_diff * rate / 1000;
+	if (subs->direction == SNDRV_PCM_STREAM_PLAYBACK)
+		est_delay = subs->last_delay - est_delay;
+	else
+		est_delay = subs->last_delay + est_delay;
 
-	if (subs->direction == SNDRV_PCM_STREAM_PLAYBACK) {
-		est_delay = queued - est_delay;
-		if (est_delay < 0)
-			est_delay = 0;
-	}
-
+	if (est_delay < 0)
+		est_delay = 0;
 	return est_delay;
 }
 
@@ -71,17 +65,17 @@ static snd_pcm_uframes_t snd_usb_pcm_delay(struct snd_usb_substream *subs,
  */
 static snd_pcm_uframes_t snd_usb_pcm_pointer(struct snd_pcm_substream *substream)
 {
-	struct snd_pcm_runtime *runtime = substream->runtime;
-	struct snd_usb_substream *subs = runtime->private_data;
+	struct snd_usb_substream *subs = substream->runtime->private_data;
 	unsigned int hwptr_done;
 
 	if (atomic_read(&subs->stream->chip->shutdown))
 		return SNDRV_PCM_POS_XRUN;
 	spin_lock(&subs->lock);
 	hwptr_done = subs->hwptr_done;
-	runtime->delay = snd_usb_pcm_delay(subs, runtime);
+	substream->runtime->delay = snd_usb_pcm_delay(subs,
+						substream->runtime->rate);
 	spin_unlock(&subs->lock);
-	return bytes_to_frames(runtime, hwptr_done);
+	return hwptr_done / (substream->runtime->frame_bits >> 3);
 }
 
 /*
@@ -606,13 +600,16 @@ static int snd_usb_pcm_prepare(struct snd_pcm_substream *substream)
 		goto unlock;
 
 	/* reset the pointer */
-	subs->buffer_bytes = frames_to_bytes(runtime, runtime->buffer_size);
-	subs->inflight_bytes = 0;
 	subs->hwptr_done = 0;
 	subs->transfer_done = 0;
+	subs->last_delay = 0;
 	subs->last_frame_number = 0;
-	subs->period_elapsed_pending = 0;
 	runtime->delay = 0;
+
+	/* for playback, submit the URBs now; otherwise, the first hwptr_done
+	 * updates for all URBs would happen at the same time when starting */
+	if (subs->direction == SNDRV_PCM_STREAM_PLAYBACK)
+		ret = start_endpoints(subs);
 
  unlock:
 	snd_usb_unlock_shutdown(chip);
@@ -1150,23 +1147,28 @@ static void retire_capture_urb(struct snd_usb_substream *subs,
 		spin_lock_irqsave(&subs->lock, flags);
 		oldptr = subs->hwptr_done;
 		subs->hwptr_done += bytes;
-		if (subs->hwptr_done >= subs->buffer_bytes)
-			subs->hwptr_done -= subs->buffer_bytes;
+		if (subs->hwptr_done >= runtime->buffer_size * stride)
+			subs->hwptr_done -= runtime->buffer_size * stride;
 		frames = (bytes + (oldptr % stride)) / stride;
 		subs->transfer_done += frames;
 		if (subs->transfer_done >= runtime->period_size) {
 			subs->transfer_done -= runtime->period_size;
 			period_elapsed = 1;
 		}
+		/* capture delay is by construction limited to one URB,
+		 * reset delays here
+		 */
+		runtime->delay = subs->last_delay = 0;
 
 		/* realign last_frame_number */
 		subs->last_frame_number = current_frame_number;
+		subs->last_frame_number &= 0xFF; /* keep 8 LSBs */
 
 		spin_unlock_irqrestore(&subs->lock, flags);
 		/* copy a data chunk */
-		if (oldptr + bytes > subs->buffer_bytes) {
-			unsigned int bytes1 = subs->buffer_bytes - oldptr;
-
+		if (oldptr + bytes > runtime->buffer_size * stride) {
+			unsigned int bytes1 =
+					runtime->buffer_size * stride - oldptr;
 			memcpy(runtime->dma_area + oldptr, cp, bytes1);
 			memcpy(runtime->dma_area, cp + bytes1, bytes - bytes1);
 		} else {
@@ -1178,29 +1180,17 @@ static void retire_capture_urb(struct snd_usb_substream *subs,
 		snd_pcm_period_elapsed(subs->pcm_substream);
 }
 
-static void urb_ctx_queue_advance(struct snd_usb_substream *subs,
-				  struct urb *urb, unsigned int bytes)
-{
-	struct snd_urb_ctx *ctx = urb->context;
-
-	ctx->queued += bytes;
-	subs->inflight_bytes += bytes;
-	subs->hwptr_done += bytes;
-	if (subs->hwptr_done >= subs->buffer_bytes)
-		subs->hwptr_done -= subs->buffer_bytes;
-}
-
 static inline void fill_playback_urb_dsd_dop(struct snd_usb_substream *subs,
 					     struct urb *urb, unsigned int bytes)
 {
 	struct snd_pcm_runtime *runtime = subs->pcm_substream->runtime;
+	unsigned int stride = runtime->frame_bits >> 3;
 	unsigned int dst_idx = 0;
 	unsigned int src_idx = subs->hwptr_done;
-	unsigned int wrap = subs->buffer_bytes;
+	unsigned int wrap = runtime->buffer_size * stride;
 	u8 *dst = urb->transfer_buffer;
 	u8 *src = runtime->dma_area;
 	u8 marker[] = { 0x05, 0xfa };
-	unsigned int queued = 0;
 
 	/*
 	 * The DSP DOP format defines a way to transport DSD samples over
@@ -1239,29 +1229,12 @@ static inline void fill_playback_urb_dsd_dop(struct snd_usb_substream *subs,
 				dst[dst_idx++] = bitrev8(src[idx]);
 			else
 				dst[dst_idx++] = src[idx];
-			queued++;
+
+			subs->hwptr_done++;
 		}
 	}
-
-	urb_ctx_queue_advance(subs, urb, queued);
-}
-
-/* copy bit-reversed bytes onto transfer buffer */
-static void fill_playback_urb_dsd_bitrev(struct snd_usb_substream *subs,
-					 struct urb *urb, unsigned int bytes)
-{
-	struct snd_pcm_runtime *runtime = subs->pcm_substream->runtime;
-	const u8 *src = runtime->dma_area;
-	u8 *buf = urb->transfer_buffer;
-	int i, ofs = subs->hwptr_done;
-
-	for (i = 0; i < bytes; i++) {
-		*buf++ = bitrev8(src[ofs]);
-		if (++ofs >= subs->buffer_bytes)
-			ofs = 0;
-	}
-
-	urb_ctx_queue_advance(subs, urb, bytes);
+	if (subs->hwptr_done >= runtime->buffer_size * stride)
+		subs->hwptr_done -= runtime->buffer_size * stride;
 }
 
 static void copy_to_urb(struct snd_usb_substream *subs, struct urb *urb,
@@ -1269,10 +1242,10 @@ static void copy_to_urb(struct snd_usb_substream *subs, struct urb *urb,
 {
 	struct snd_pcm_runtime *runtime = subs->pcm_substream->runtime;
 
-	if (subs->hwptr_done + bytes > subs->buffer_bytes) {
+	if (subs->hwptr_done + bytes > runtime->buffer_size * stride) {
 		/* err, the transferred area goes over buffer boundary. */
-		unsigned int bytes1 = subs->buffer_bytes - subs->hwptr_done;
-
+		unsigned int bytes1 =
+			runtime->buffer_size * stride - subs->hwptr_done;
 		memcpy(urb->transfer_buffer + offset,
 		       runtime->dma_area + subs->hwptr_done, bytes1);
 		memcpy(urb->transfer_buffer + offset + bytes1,
@@ -1281,8 +1254,9 @@ static void copy_to_urb(struct snd_usb_substream *subs, struct urb *urb,
 		memcpy(urb->transfer_buffer + offset,
 		       runtime->dma_area + subs->hwptr_done, bytes);
 	}
-
-	urb_ctx_queue_advance(subs, urb, bytes);
+	subs->hwptr_done += bytes;
+	if (subs->hwptr_done >= runtime->buffer_size * stride)
+		subs->hwptr_done -= runtime->buffer_size * stride;
 }
 
 static unsigned int copy_to_urb_quirk(struct snd_usb_substream *subs,
@@ -1321,18 +1295,17 @@ static void prepare_playback_urb(struct snd_usb_substream *subs,
 	int i, stride, period_elapsed = 0;
 	unsigned long flags;
 
-	stride = ep->stride;
+	stride = runtime->frame_bits >> 3;
 
 	frames = 0;
-	ctx->queued = 0;
 	urb->number_of_packets = 0;
 	spin_lock_irqsave(&subs->lock, flags);
 	subs->frame_limit += ep->max_urb_frames;
 	for (i = 0; i < ctx->packets; i++) {
 		counts = snd_usb_endpoint_next_packet_size(ep, ctx, i);
 		/* set up descriptor */
-		urb->iso_frame_desc[i].offset = frames * stride;
-		urb->iso_frame_desc[i].length = counts * stride;
+		urb->iso_frame_desc[i].offset = frames * ep->stride;
+		urb->iso_frame_desc[i].length = counts * ep->stride;
 		frames += counts;
 		urb->number_of_packets++;
 		subs->transfer_done += counts;
@@ -1347,14 +1320,14 @@ static void prepare_playback_urb(struct snd_usb_substream *subs,
 					frames -= subs->transfer_done;
 					counts -= subs->transfer_done;
 					urb->iso_frame_desc[i].length =
-						counts * stride;
+						counts * ep->stride;
 					subs->transfer_done = 0;
 				}
 				i++;
 				if (i < ctx->packets) {
 					/* add a transfer delimiter */
 					urb->iso_frame_desc[i].offset =
-						frames * stride;
+						frames * ep->stride;
 					urb->iso_frame_desc[i].length = 0;
 					urb->number_of_packets++;
 				}
@@ -1367,14 +1340,24 @@ static void prepare_playback_urb(struct snd_usb_substream *subs,
 		    !snd_usb_endpoint_implicit_feedback_sink(ep))
 			break;
 	}
-	bytes = frames * stride;
+	bytes = frames * ep->stride;
 
 	if (unlikely(ep->cur_format == SNDRV_PCM_FORMAT_DSD_U16_LE &&
 		     subs->cur_audiofmt->dsd_dop)) {
 		fill_playback_urb_dsd_dop(subs, urb, bytes);
 	} else if (unlikely(ep->cur_format == SNDRV_PCM_FORMAT_DSD_U8 &&
 			   subs->cur_audiofmt->dsd_bitrev)) {
-		fill_playback_urb_dsd_bitrev(subs, urb, bytes);
+		/* bit-reverse the bytes */
+		u8 *buf = urb->transfer_buffer;
+		for (i = 0; i < bytes; i++) {
+			int idx = (subs->hwptr_done + i)
+				% (runtime->buffer_size * stride);
+			buf[i] = bitrev8(runtime->dma_area[idx]);
+		}
+
+		subs->hwptr_done += bytes;
+		if (subs->hwptr_done >= runtime->buffer_size * stride)
+			subs->hwptr_done -= runtime->buffer_size * stride;
 	} else {
 		/* usual PCM */
 		if (!subs->tx_length_quirk)
@@ -1384,7 +1367,14 @@ static void prepare_playback_urb(struct snd_usb_substream *subs,
 			/* bytes is now amount of outgoing data */
 	}
 
+	/* update delay with exact number of samples queued */
+	runtime->delay = subs->last_delay;
+	runtime->delay += frames;
+	subs->last_delay = runtime->delay;
+
+	/* realign last_frame_number */
 	subs->last_frame_number = usb_get_current_frame_number(subs->dev);
+	subs->last_frame_number &= 0xFF; /* keep 8 LSBs */
 
 	if (subs->trigger_tstamp_pending_update) {
 		/* this is the first actual URB submitted,
@@ -1394,10 +1384,6 @@ static void prepare_playback_urb(struct snd_usb_substream *subs,
 		subs->trigger_tstamp_pending_update = false;
 	}
 
-	if (period_elapsed && !subs->running) {
-		subs->period_elapsed_pending = 1;
-		period_elapsed = 0;
-	}
 	spin_unlock_irqrestore(&subs->lock, flags);
 	urb->transfer_buffer_length = bytes;
 	if (period_elapsed)
@@ -1412,32 +1398,55 @@ static void retire_playback_urb(struct snd_usb_substream *subs,
 			       struct urb *urb)
 {
 	unsigned long flags;
-	struct snd_urb_ctx *ctx = urb->context;
-	bool period_elapsed = false;
+	struct snd_pcm_runtime *runtime = subs->pcm_substream->runtime;
+	struct snd_usb_endpoint *ep = subs->data_endpoint;
+	int processed = urb->transfer_buffer_length / ep->stride;
+	int est_delay;
+
+	/* ignore the delay accounting when processed=0 is given, i.e.
+	 * silent payloads are processed before handling the actual data
+	 */
+	if (!processed)
+		return;
 
 	spin_lock_irqsave(&subs->lock, flags);
-	if (ctx->queued) {
-		if (subs->inflight_bytes >= ctx->queued)
-			subs->inflight_bytes -= ctx->queued;
-		else
-			subs->inflight_bytes = 0;
+	if (!subs->last_delay)
+		goto out; /* short path */
+
+	est_delay = snd_usb_pcm_delay(subs, runtime->rate);
+	/* update delay with exact number of samples played */
+	if (processed > subs->last_delay)
+		subs->last_delay = 0;
+	else
+		subs->last_delay -= processed;
+	runtime->delay = subs->last_delay;
+
+	/*
+	 * Report when delay estimate is off by more than 2ms.
+	 * The error should be lower than 2ms since the estimate relies
+	 * on two reads of a counter updated every ms.
+	 */
+	if (abs(est_delay - subs->last_delay) * 1000 > runtime->rate * 2)
+		dev_dbg_ratelimited(&subs->dev->dev,
+			"delay: estimated %d, actual %d\n",
+			est_delay, subs->last_delay);
+
+	if (!subs->running) {
+		/* update last_frame_number for delay counting here since
+		 * prepare_playback_urb won't be called during pause
+		 */
+		subs->last_frame_number =
+			usb_get_current_frame_number(subs->dev) & 0xff;
 	}
 
-	subs->last_frame_number = usb_get_current_frame_number(subs->dev);
-	if (subs->running) {
-		period_elapsed = subs->period_elapsed_pending;
-		subs->period_elapsed_pending = 0;
-	}
+ out:
 	spin_unlock_irqrestore(&subs->lock, flags);
-	if (period_elapsed)
-		snd_pcm_period_elapsed(subs->pcm_substream);
 }
 
 static int snd_usb_substream_playback_trigger(struct snd_pcm_substream *substream,
 					      int cmd)
 {
 	struct snd_usb_substream *subs = substream->runtime->private_data;
-	int err;
 
 	switch (cmd) {
 	case SNDRV_PCM_TRIGGER_START:
@@ -1448,14 +1457,6 @@ static int snd_usb_substream_playback_trigger(struct snd_pcm_substream *substrea
 					      prepare_playback_urb,
 					      retire_playback_urb,
 					      subs);
-		if (cmd == SNDRV_PCM_TRIGGER_START) {
-			err = start_endpoints(subs);
-			if (err < 0) {
-				snd_usb_endpoint_set_callback(subs->data_endpoint,
-							      NULL, NULL, NULL);
-				return err;
-			}
-		}
 		subs->running = 1;
 		dev_dbg(&subs->dev->dev, "%d:%d Start Playback PCM\n",
 			subs->cur_audiofmt->iface,
@@ -1503,7 +1504,6 @@ static int snd_usb_substream_capture_trigger(struct snd_pcm_substream *substream
 		snd_usb_endpoint_set_callback(subs->data_endpoint,
 					      NULL, retire_capture_urb,
 					      subs);
-		subs->last_frame_number = usb_get_current_frame_number(subs->dev);
 		subs->running = 1;
 		dev_dbg(&subs->dev->dev, "%d:%d Start Capture PCM\n",
 			subs->cur_audiofmt->iface,

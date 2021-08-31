@@ -29,9 +29,6 @@ static inline void preempt_count_set(int pc)
 				  old, new) != old);
 }
 
-
-
-
 static inline void set_preempt_need_resched(void)
 {
 	__atomic_and(~PREEMPT_NEED_RESCHED, &S390_lowcore.preempt_count);
@@ -84,9 +81,6 @@ static inline void preempt_count_set(int pc)
 {
 	S390_lowcore.preempt_count = pc;
 }
-
-
-
 
 static inline void set_preempt_need_resched(void)
 {

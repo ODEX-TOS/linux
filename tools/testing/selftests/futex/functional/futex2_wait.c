@@ -69,15 +69,6 @@ void *waiterfn(void *arg)
 	return NULL;
 }
 
-int main(int argc, char *argv[])
-{
-	unsigned int flags = FUTEX_SHARED_FLAG;
-	int res, ret = RET_PASS, fd, c, shm_id;
-	u_int32_t f_private = 0, *shared_data;
-	pthread_t waiter;
-	void *shm;
-
-	futex = &f_private;
 void *waitershm(void *arg)
 {
 	futex2_wait(arg, 0, FUTEX_32 | FUTEX_SHARED_FLAG, NULL);

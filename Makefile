@@ -2,7 +2,7 @@
 VERSION = 5
 PATCHLEVEL = 13
 SUBLEVEL = 13
-EXTRAVERSION = -arch1
+EXTRAVERSION = -tos1
 NAME = Opossums on Parade
 
 # *DOCUMENTATION*
@@ -1003,7 +1003,8 @@ KBUILD_CFLAGS	+= -fno-strict-overflow
 # Make sure -fstack-check isn't enabled (like gentoo apparently did)
 KBUILD_CFLAGS  += -fno-stack-check
 
-
+# conserve stack if available
+KBUILD_CFLAGS   += $(call cc-option,-fconserve-stack)
 
 # Prohibit date/time macros, which would make the build non-deterministic
 KBUILD_CFLAGS   += -Werror=date-time

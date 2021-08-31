@@ -6,7 +6,7 @@ git merge -X theirs "$tag"
 mkdir tos-logo
 cp -r drivers/video/logo/*.ppm tos-logo
 
-git clone https://github.com/zen-kernel/zen-kernel.git linux
+git clone https://github.com/archlinux/linux.git linux
 cd linux
 git checkout "$tag"
 cd ../
