@@ -254,7 +254,9 @@ endif
 #
 # Board-dependent options and extra files
 #
-include arch/mips/Kbuild.platforms
+ifdef need-compiler
+include $(srctree)/arch/mips/Kbuild.platforms
+endif
 
 ifdef CONFIG_PHYSICAL_START
 load-y					= $(CONFIG_PHYSICAL_START)
@@ -331,9 +333,6 @@ head-y := arch/mips/kernel/head.o
 
 libs-y			+= arch/mips/lib/
 libs-$(CONFIG_MIPS_FP_SUPPORT) += arch/mips/math-emu/
-
-# See arch/mips/Kbuild for content of core part of the kernel
-core-y += arch/mips/
 
 drivers-y			+= arch/mips/crypto/
 
@@ -562,6 +561,9 @@ sead3micro_defconfig-y		:= micro32r2el_defconfig BOARDS=sead-3
 
 legacy_defconfigs		+= xilfpga_defconfig
 xilfpga_defconfig-y		:= 32r2el_defconfig BOARDS=xilfpga
+
+legacy_defconfigs		+= pistachio_defconfig
+pistachio_defconfig-y		:= 32r2el_defconfig BOARDS=marduk
 
 .PHONY: $(legacy_defconfigs)
 $(legacy_defconfigs):

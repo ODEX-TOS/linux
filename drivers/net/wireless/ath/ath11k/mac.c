@@ -1314,10 +1314,16 @@ static void ath11k_peer_assoc_h_he(struct ath11k *ar,
 
 	arg->he_flag = true;
 
-	memcpy(&arg->peer_he_cap_macinfo, he_cap->he_cap_elem.mac_cap_info,
-	       sizeof(arg->peer_he_cap_macinfo));
-	memcpy(&arg->peer_he_cap_phyinfo, he_cap->he_cap_elem.phy_cap_info,
-	       sizeof(arg->peer_he_cap_phyinfo));
+	memcpy_and_pad(&arg->peer_he_cap_macinfo,
+		       sizeof(arg->peer_he_cap_macinfo),
+		       he_cap->he_cap_elem.mac_cap_info,
+		       sizeof(he_cap->he_cap_elem.mac_cap_info),
+		       0);
+	memcpy_and_pad(&arg->peer_he_cap_phyinfo,
+		       sizeof(arg->peer_he_cap_phyinfo),
+		       he_cap->he_cap_elem.phy_cap_info,
+		       sizeof(he_cap->he_cap_elem.phy_cap_info),
+		       0);
 	arg->peer_he_ops = vif->bss_conf.he_oper.params;
 
 	/* the top most byte is used to indicate BSS color info */
@@ -6584,7 +6590,7 @@ static int __ath11k_mac_register(struct ath11k *ar)
 		ar->hw->wiphy->interface_modes &= ~BIT(NL80211_IFTYPE_MONITOR);
 
 	/* Apply the regd received during initialization */
-	ret = ath11k_regd_update(ar, true);
+	ret = ath11k_regd_update(ar);
 	if (ret) {
 		ath11k_err(ar->ab, "ath11k regd update failed: %d\n", ret);
 		goto err_unregister_hw;

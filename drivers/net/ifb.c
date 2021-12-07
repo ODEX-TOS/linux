@@ -16,10 +16,10 @@
 	by Patrick McHardy and then maintained by Andre Correa.
 
 	You need the tc action  mirror or redirect to feed this device
-       	packets.
+	packets.
 
 
-  	Authors:	Jamal Hadi Salim (2005)
+	Authors:	Jamal Hadi Salim (2005)
 
 */
 
@@ -76,7 +76,9 @@ static void ifb_ri_tasklet(struct tasklet_struct *t)
 
 	while ((skb = __skb_dequeue(&txp->tq)) != NULL) {
 		skb->redirected = 0;
+#ifdef CONFIG_NET_CLS_ACT
 		skb->tc_skip_classify = 1;
+#endif
 
 		u64_stats_update_begin(&txp->tsync);
 		txp->tx_packets++;

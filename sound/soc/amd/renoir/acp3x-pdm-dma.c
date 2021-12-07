@@ -77,7 +77,6 @@ static void enable_pdm_clock(void __iomem *acp_base)
 	u32 pdm_clk_enable, pdm_ctrl;
 
 	pdm_clk_enable = ACP_PDM_CLK_FREQ_MASK;
-	pdm_ctrl = 0x00;
 
 	rn_writel(pdm_clk_enable, acp_base + ACP_WOV_CLK_CTRL);
 	pdm_ctrl = rn_readl(acp_base + ACP_WOV_MISC_CTRL);
@@ -143,9 +142,6 @@ static int stop_pdm_dma(void __iomem *acp_base)
 {
 	u32 pdm_enable, pdm_dma_enable;
 	int timeout;
-
-	pdm_enable = 0x00;
-	pdm_dma_enable  = 0x00;
 
 	pdm_enable = rn_readl(acp_base + ACP_WOV_PDM_ENABLE);
 	pdm_dma_enable = rn_readl(acp_base + ACP_WOV_PDM_DMA_ENABLE);
@@ -295,13 +291,6 @@ static int acp_pdm_dma_new(struct snd_soc_component *component,
 	return 0;
 }
 
-static int acp_pdm_dma_mmap(struct snd_soc_component *component,
-			    struct snd_pcm_substream *substream,
-			    struct vm_area_struct *vma)
-{
-	return snd_pcm_lib_default_mmap(substream, vma);
-}
-
 static int acp_pdm_dma_close(struct snd_soc_component *component,
 			     struct snd_pcm_substream *substream)
 {
@@ -379,7 +368,6 @@ static const struct snd_soc_component_driver acp_pdm_component = {
 	.close		= acp_pdm_dma_close,
 	.hw_params	= acp_pdm_dma_hw_params,
 	.pointer	= acp_pdm_dma_pointer,
-	.mmap		= acp_pdm_dma_mmap,
 	.pcm_construct	= acp_pdm_dma_new,
 };
 

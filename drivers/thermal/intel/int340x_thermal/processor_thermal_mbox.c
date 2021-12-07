@@ -7,6 +7,7 @@
 #include <linux/kernel.h>
 #include <linux/module.h>
 #include <linux/pci.h>
+#include <linux/io-64-nonatomic-lo-hi.h>
 #include "processor_thermal_device.h"
 
 #define MBOX_CMD_WORKLOAD_TYPE_READ	0x0E
@@ -23,7 +24,7 @@
 
 static DEFINE_MUTEX(mbox_lock);
 
-static int send_mbox_cmd(struct pci_dev *pdev, u8 cmd_id, u32 cmd_data, u8 *cmd_resp)
+static int send_mbox_cmd(struct pci_dev *pdev, u16 cmd_id, u32 cmd_data, u32 *cmd_resp)
 {
 	struct proc_thermal_device *proc_priv;
 	u32 retries, data;
@@ -81,6 +82,12 @@ unlock_mbox:
 	mutex_unlock(&mbox_lock);
 	return ret;
 }
+
+int processor_thermal_send_mbox_cmd(struct pci_dev *pdev, u16 cmd_id, u32 cmd_data, u32 *cmd_resp)
+{
+	return send_mbox_cmd(pdev, cmd_id, cmd_data, cmd_resp);
+}
+EXPORT_SYMBOL_GPL(processor_thermal_send_mbox_cmd);
 
 /* List of workload types */
 static const char * const workload_types[] = {
@@ -147,7 +154,7 @@ static ssize_t workload_type_show(struct device *dev,
 				   char *buf)
 {
 	struct pci_dev *pdev = to_pci_dev(dev);
-	u8 cmd_resp;
+	u32 cmd_resp;
 	int ret;
 
 	ret = send_mbox_cmd(pdev, MBOX_CMD_WORKLOAD_TYPE_READ, 0, &cmd_resp);
@@ -181,7 +188,7 @@ static bool workload_req_created;
 
 int proc_thermal_mbox_add(struct pci_dev *pdev, struct proc_thermal_device *proc_priv)
 {
-	u8 cmd_resp;
+	u32 cmd_resp;
 	int ret;
 
 	/* Check if there is a mailbox support, if fails return success */

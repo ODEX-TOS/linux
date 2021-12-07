@@ -50,9 +50,12 @@
 &avb {
 	pinctrl-0 = <&avb_pins>;
 	pinctrl-names = "default";
+	phy-mode = "rgmii-rxid";
 	phy-handle = <&phy0>;
 	rx-internal-delay-ps = <1800>;
 	tx-internal-delay-ps = <2000>;
+	clocks = <&cpg CPG_MOD 812>, <&versaclock5 4>;
+	clock-names = "fck", "refclk";
 	status = "okay";
 
 	phy0: ethernet-phy@0 {

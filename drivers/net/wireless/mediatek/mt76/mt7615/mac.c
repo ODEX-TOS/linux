@@ -20,7 +20,7 @@
 #define to_rssi(field, rxv)		((FIELD_GET(field, rxv) - 220) / 2)
 
 static const struct mt7615_dfs_radar_spec etsi_radar_specs = {
-	.pulse_th = { 40, -10, -80, 800, 3360, 128, 5200 },
+	.pulse_th = { 110, -10, -80, 40, 5200, 128, 5200 },
 	.radar_pattern = {
 		[5] =  { 1, 0,  6, 32, 28, 0, 17,  990, 5010, 1, 1 },
 		[6] =  { 1, 0,  9, 32, 28, 0, 27,  615, 5010, 1, 1 },
@@ -34,7 +34,7 @@ static const struct mt7615_dfs_radar_spec etsi_radar_specs = {
 };
 
 static const struct mt7615_dfs_radar_spec fcc_radar_specs = {
-	.pulse_th = { 40, -10, -80, 800, 3360, 128, 5200 },
+	.pulse_th = { 110, -10, -80, 40, 5200, 128, 5200 },
 	.radar_pattern = {
 		[0] = { 1, 0,  9,  32, 28, 0, 13, 508, 3076, 1,  1 },
 		[1] = { 1, 0, 12,  32, 28, 0, 17, 140,  240, 1,  1 },
@@ -45,7 +45,7 @@ static const struct mt7615_dfs_radar_spec fcc_radar_specs = {
 };
 
 static const struct mt7615_dfs_radar_spec jp_radar_specs = {
-	.pulse_th = { 40, -10, -80, 800, 3360, 128, 5200 },
+	.pulse_th = { 110, -10, -80, 40, 5200, 128, 5200 },
 	.radar_pattern = {
 		[0] =  { 1, 0,  8, 32, 28, 0, 13,  508, 3076, 1,  1 },
 		[1] =  { 1, 0, 12, 32, 28, 0, 17,  140,  240, 1,  1 },
@@ -755,12 +755,15 @@ int mt7615_mac_write_txwi(struct mt7615_dev *dev, __le32 *txwi,
 	if (info->flags & IEEE80211_TX_CTL_NO_ACK)
 		txwi[3] |= cpu_to_le32(MT_TXD3_NO_ACK);
 
-	txwi[7] = FIELD_PREP(MT_TXD7_TYPE, fc_type) |
-		  FIELD_PREP(MT_TXD7_SUB_TYPE, fc_stype) |
-		  FIELD_PREP(MT_TXD7_SPE_IDX, 0x18);
-	if (!is_mmio)
-		txwi[8] = FIELD_PREP(MT_TXD8_L_TYPE, fc_type) |
-			  FIELD_PREP(MT_TXD8_L_SUB_TYPE, fc_stype);
+	val = FIELD_PREP(MT_TXD7_TYPE, fc_type) |
+	      FIELD_PREP(MT_TXD7_SUB_TYPE, fc_stype) |
+	      FIELD_PREP(MT_TXD7_SPE_IDX, 0x18);
+	txwi[7] = cpu_to_le32(val);
+	if (!is_mmio) {
+		val = FIELD_PREP(MT_TXD8_L_TYPE, fc_type) |
+		      FIELD_PREP(MT_TXD8_L_SUB_TYPE, fc_stype);
+		txwi[8] = cpu_to_le32(val);
+	}
 
 	return 0;
 }
@@ -1102,7 +1105,7 @@ void mt7615_mac_set_rates(struct mt7615_phy *phy, struct mt7615_sta *sta,
 	idx = idx > HW_BSSID_MAX ? HW_BSSID_0 : idx;
 	addr = idx > 1 ? MT_LPON_TCR2(idx): MT_LPON_TCR0(idx);
 
-	mt76_set(dev, addr, MT_LPON_TCR_MODE); /* TSF read */
+	mt76_rmw(dev, addr, MT_LPON_TCR_MODE, MT_LPON_TCR_READ); /* TSF read */
 	sta->rate_set_tsf = mt76_rr(dev, MT_LPON_UTTR0) & ~BIT(0);
 	sta->rate_set_tsf |= rd.rateset;
 
@@ -1429,7 +1432,7 @@ static bool mt7615_mac_add_txs_skb(struct mt7615_dev *dev,
 		struct ieee80211_tx_info *info = IEEE80211_SKB_CB(skb);
 
 		if (!mt7615_fill_txs(dev, sta, info, txs_data)) {
-			ieee80211_tx_info_clear_status(info);
+			info->status.rates[0].count = 0;
 			info->status.rates[0].idx = -1;
 		}
 
@@ -1494,30 +1497,39 @@ out:
 }
 
 static void
+mt7615_txwi_free(struct mt7615_dev *dev, struct mt76_txwi_cache *txwi)
+{
+	struct mt76_dev *mdev = &dev->mt76;
+	__le32 *txwi_data;
+	u32 val;
+	u8 wcid;
+
+	mt7615_txp_skb_unmap(mdev, txwi);
+	if (!txwi->skb)
+		goto out;
+
+	txwi_data = (__le32 *)mt76_get_txwi_ptr(mdev, txwi);
+	val = le32_to_cpu(txwi_data[1]);
+	wcid = FIELD_GET(MT_TXD1_WLAN_IDX, val);
+	mt76_tx_complete_skb(mdev, wcid, txwi->skb);
+
+out:
+	txwi->skb = NULL;
+	mt76_put_txwi(mdev, txwi);
+}
+
+static void
 mt7615_mac_tx_free_token(struct mt7615_dev *dev, u16 token)
 {
 	struct mt76_dev *mdev = &dev->mt76;
 	struct mt76_txwi_cache *txwi;
-	__le32 *txwi_data;
-	u32 val;
-	u8 wcid;
 
 	trace_mac_tx_free(dev, token);
 	txwi = mt76_token_put(mdev, token);
 	if (!txwi)
 		return;
 
-	txwi_data = (__le32 *)mt76_get_txwi_ptr(mdev, txwi);
-	val = le32_to_cpu(txwi_data[1]);
-	wcid = FIELD_GET(MT_TXD1_WLAN_IDX, val);
-
-	mt7615_txp_skb_unmap(mdev, txwi);
-	if (txwi->skb) {
-		mt76_tx_complete_skb(mdev, wcid, txwi->skb);
-		txwi->skb = NULL;
-	}
-
-	mt76_put_txwi(mdev, txwi);
+	mt7615_txwi_free(dev, txwi);
 }
 
 static void mt7615_mac_tx_free(struct mt7615_dev *dev, struct sk_buff *skb)
@@ -1859,42 +1871,40 @@ mt7615_phy_update_channel(struct mt76_phy *mphy, int idx)
 	state->noise = -(phy->noise >> 4);
 }
 
-static void __mt7615_update_channel(struct mt7615_dev *dev)
-{
-	struct mt76_dev *mdev = &dev->mt76;
-
-	mt7615_phy_update_channel(&mdev->phy, 0);
-	if (mdev->phy2)
-		mt7615_phy_update_channel(mdev->phy2, 1);
-
-	/* reset obss airtime */
-	mt76_set(dev, MT_WF_RMAC_MIB_TIME0, MT_WF_RMAC_MIB_RXTIME_CLR);
-}
-
-void mt7615_update_channel(struct mt76_dev *mdev)
-{
-	struct mt7615_dev *dev = container_of(mdev, struct mt7615_dev, mt76);
-
-	if (mt76_connac_pm_wake(&dev->mphy, &dev->pm))
-		return;
-
-	__mt7615_update_channel(dev);
-	mt76_connac_power_save_sched(&dev->mphy, &dev->pm);
-}
-EXPORT_SYMBOL_GPL(mt7615_update_channel);
-
 static void mt7615_update_survey(struct mt7615_dev *dev)
 {
 	struct mt76_dev *mdev = &dev->mt76;
 	ktime_t cur_time;
 
-	__mt7615_update_channel(dev);
+	/* MT7615 can only update both phys simultaneously
+	 * since some reisters are shared across bands.
+	 */
+
+	mt7615_phy_update_channel(&mdev->phy, 0);
+	if (mdev->phy2)
+		mt7615_phy_update_channel(mdev->phy2, 1);
+
 	cur_time = ktime_get_boottime();
 
 	mt76_update_survey_active_time(&mdev->phy, cur_time);
 	if (mdev->phy2)
 		mt76_update_survey_active_time(mdev->phy2, cur_time);
+
+	/* reset obss airtime */
+	mt76_set(dev, MT_WF_RMAC_MIB_TIME0, MT_WF_RMAC_MIB_RXTIME_CLR);
 }
+
+void mt7615_update_channel(struct mt76_phy *mphy)
+{
+	struct mt7615_dev *dev = container_of(mphy->dev, struct mt7615_dev, mt76);
+
+	if (mt76_connac_pm_wake(&dev->mphy, &dev->pm))
+		return;
+
+	mt7615_update_survey(dev);
+	mt76_connac_power_save_sched(&dev->mphy, &dev->pm);
+}
+EXPORT_SYMBOL_GPL(mt7615_update_channel);
 
 static void
 mt7615_mac_update_mib_stats(struct mt7615_phy *phy)
@@ -1944,15 +1954,26 @@ void mt7615_pm_wake_work(struct work_struct *work)
 	mphy = dev->phy.mt76;
 
 	if (!mt7615_mcu_set_drv_ctrl(dev)) {
+		struct mt76_dev *mdev = &dev->mt76;
 		int i;
 
-		mt76_for_each_q_rx(&dev->mt76, i)
-			napi_schedule(&dev->mt76.napi[i]);
-		mt76_connac_pm_dequeue_skbs(mphy, &dev->pm);
-		mt76_queue_tx_cleanup(dev, dev->mt76.q_mcu[MT_MCUQ_WM], false);
-		if (test_bit(MT76_STATE_RUNNING, &mphy->state))
+		if (mt76_is_sdio(mdev)) {
+			mt76_worker_schedule(&mdev->sdio.txrx_worker);
+		} else {
+			mt76_for_each_q_rx(mdev, i)
+				napi_schedule(&mdev->napi[i]);
+			mt76_connac_pm_dequeue_skbs(mphy, &dev->pm);
+			mt76_queue_tx_cleanup(dev, mdev->q_mcu[MT_MCUQ_WM],
+					      false);
+		}
+
+		if (test_bit(MT76_STATE_RUNNING, &mphy->state)) {
+			unsigned long timeout;
+
+			timeout = mt7615_get_macwork_timeout(dev);
 			ieee80211_queue_delayed_work(mphy->hw, &mphy->mac_work,
-						     MT7615_WATCHDOG_TIME);
+						     timeout);
+		}
 	}
 
 	ieee80211_wake_queues(mphy->hw);
@@ -1987,6 +2008,7 @@ void mt7615_mac_work(struct work_struct *work)
 {
 	struct mt7615_phy *phy;
 	struct mt76_phy *mphy;
+	unsigned long timeout;
 
 	mphy = (struct mt76_phy *)container_of(work, struct mt76_phy,
 					       mac_work.work);
@@ -2005,8 +2027,9 @@ void mt7615_mac_work(struct work_struct *work)
 	mt7615_mutex_release(phy->dev);
 
 	mt76_tx_status_check(mphy->dev, NULL, false);
-	ieee80211_queue_delayed_work(mphy->hw, &mphy->mac_work,
-				     MT7615_WATCHDOG_TIME);
+
+	timeout = mt7615_get_macwork_timeout(phy->dev);
+	ieee80211_queue_delayed_work(mphy->hw, &mphy->mac_work, timeout);
 }
 
 void mt7615_tx_token_put(struct mt7615_dev *dev)
@@ -2015,16 +2038,8 @@ void mt7615_tx_token_put(struct mt7615_dev *dev)
 	int id;
 
 	spin_lock_bh(&dev->mt76.token_lock);
-	idr_for_each_entry(&dev->mt76.token, txwi, id) {
-		mt7615_txp_skb_unmap(&dev->mt76, txwi);
-		if (txwi->skb) {
-			struct ieee80211_hw *hw;
-
-			hw = mt76_tx_status_get_hw(&dev->mt76, txwi->skb);
-			ieee80211_free_txskb(hw, txwi->skb);
-		}
-		mt76_put_txwi(&dev->mt76, txwi);
-	}
+	idr_for_each_entry(&dev->mt76.token, txwi, id)
+		mt7615_txwi_free(dev, txwi);
 	spin_unlock_bh(&dev->mt76.token_lock);
 	idr_destroy(&dev->mt76.token);
 }
@@ -2087,14 +2102,12 @@ mt7615_dfs_init_radar_specs(struct mt7615_phy *phy)
 {
 	const struct mt7615_dfs_radar_spec *radar_specs;
 	struct mt7615_dev *dev = phy->dev;
-	int err, i;
+	int err, i, lpn = 500;
 
 	switch (dev->mt76.region) {
 	case NL80211_DFS_FCC:
 		radar_specs = &fcc_radar_specs;
-		err = mt7615_mcu_set_fcc5_lpn(dev, 8);
-		if (err < 0)
-			return err;
+		lpn = 8;
 		break;
 	case NL80211_DFS_ETSI:
 		radar_specs = &etsi_radar_specs;
@@ -2105,6 +2118,11 @@ mt7615_dfs_init_radar_specs(struct mt7615_phy *phy)
 	default:
 		return -EINVAL;
 	}
+
+	/* avoid FCC radar detection in non-FCC region */
+	err = mt7615_mcu_set_fcc5_lpn(dev, lpn);
+	if (err < 0)
+		return err;
 
 	for (i = 0; i < ARRAY_SIZE(radar_specs->radar_pattern); i++) {
 		err = mt7615_mcu_set_radar_th(dev, i,

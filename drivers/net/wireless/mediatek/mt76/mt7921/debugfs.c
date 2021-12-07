@@ -5,6 +5,32 @@
 #include "eeprom.h"
 
 static int
+mt7921_reg_set(void *data, u64 val)
+{
+	struct mt7921_dev *dev = data;
+
+	mt7921_mutex_acquire(dev);
+	mt76_wr(dev, dev->mt76.debugfs_reg, val);
+	mt7921_mutex_release(dev);
+
+	return 0;
+}
+
+static int
+mt7921_reg_get(void *data, u64 *val)
+{
+	struct mt7921_dev *dev = data;
+
+	mt7921_mutex_acquire(dev);
+	*val = mt76_rr(dev, dev->mt76.debugfs_reg);
+	mt7921_mutex_release(dev);
+
+	return 0;
+}
+
+DEFINE_DEBUGFS_ATTRIBUTE(fops_regval, mt7921_reg_get, mt7921_reg_set,
+			 "0x%08llx\n");
+static int
 mt7921_fw_debug_set(void *data, u64 val)
 {
 	struct mt7921_dev *dev = data;
@@ -69,6 +95,8 @@ mt7921_tx_stats_show(struct seq_file *file, void *data)
 	struct mt7921_dev *dev = file->private;
 	int stat[8], i, n;
 
+	mt7921_mutex_acquire(dev);
+
 	mt7921_ampdu_stat_read_phy(&dev->phy, file);
 
 	/* Tx amsdu info */
@@ -77,6 +105,8 @@ mt7921_tx_stats_show(struct seq_file *file, void *data)
 		stat[i] = mt76_rr(dev,  MT_PLE_AMSDU_PACK_MSDU_CNT(i));
 		n += stat[i];
 	}
+
+	mt7921_mutex_release(dev);
 
 	for (i = 0; i < ARRAY_SIZE(stat); i++) {
 		seq_printf(file, "AMSDU pack count of %d MSDU in TXD: 0x%x ",
@@ -98,6 +128,8 @@ mt7921_queues_acq(struct seq_file *s, void *data)
 	struct mt7921_dev *dev = dev_get_drvdata(s->private);
 	int i;
 
+	mt7921_mutex_acquire(dev);
+
 	for (i = 0; i < 16; i++) {
 		int j, acs = i / 4, index = i % 4;
 		u32 ctrl, val, qlen = 0;
@@ -116,6 +148,8 @@ mt7921_queues_acq(struct seq_file *s, void *data)
 		}
 		seq_printf(s, "AC%d%d: queued=%d\n", acs, index, qlen);
 	}
+
+	mt7921_mutex_release(dev);
 
 	return 0;
 }
@@ -250,6 +284,9 @@ mt7921_pm_set(void *data, u64 val)
 	ieee80211_iterate_active_interfaces(mphy->hw,
 					    IEEE80211_IFACE_ITER_RESUME_ALL,
 					    mt7921_pm_interface_iter, mphy->priv);
+
+	mt76_connac_mcu_set_deep_sleep(&dev->mt76, pm->ds_enable);
+
 	mt7921_mutex_release(dev);
 
 	return 0;
@@ -266,6 +303,36 @@ mt7921_pm_get(void *data, u64 *val)
 }
 
 DEFINE_DEBUGFS_ATTRIBUTE(fops_pm, mt7921_pm_get, mt7921_pm_set, "%lld\n");
+
+static int
+mt7921_deep_sleep_set(void *data, u64 val)
+{
+	struct mt7921_dev *dev = data;
+	struct mt76_connac_pm *pm = &dev->pm;
+	bool enable = !!val;
+
+	mt7921_mutex_acquire(dev);
+	if (pm->ds_enable != enable) {
+		mt76_connac_mcu_set_deep_sleep(&dev->mt76, enable);
+		pm->ds_enable = enable;
+	}
+	mt7921_mutex_release(dev);
+
+	return 0;
+}
+
+static int
+mt7921_deep_sleep_get(void *data, u64 *val)
+{
+	struct mt7921_dev *dev = data;
+
+	*val = dev->pm.ds_enable;
+
+	return 0;
+}
+
+DEFINE_DEBUGFS_ATTRIBUTE(fops_ds, mt7921_deep_sleep_get,
+			 mt7921_deep_sleep_set, "%lld\n");
 
 static int
 mt7921_pm_stats(struct seq_file *s, void *data)
@@ -340,7 +407,7 @@ int mt7921_init_debugfs(struct mt7921_dev *dev)
 {
 	struct dentry *dir;
 
-	dir = mt76_register_debugfs(&dev->mt76);
+	dir = mt76_register_debugfs_fops(&dev->mt76, &fops_regval);
 	if (!dir)
 		return -ENOMEM;
 
@@ -358,6 +425,7 @@ int mt7921_init_debugfs(struct mt7921_dev *dev)
 	debugfs_create_file("chip_reset", 0600, dir, dev, &fops_reset);
 	debugfs_create_devm_seqfile(dev->mt76.dev, "runtime_pm_stats", dir,
 				    mt7921_pm_stats);
+	debugfs_create_file("deep-sleep", 0600, dir, dev, &fops_ds);
 
 	return 0;
 }

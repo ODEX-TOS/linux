@@ -925,6 +925,14 @@ ipv6_fcnal_runtime()
 	run_cmd "$IP nexthop add id 86 via 2001:db8:91::2 dev veth1"
 	run_cmd "$IP ro add 2001:db8:101::1/128 nhid 81"
 
+	# route can not use prefsrc with nexthops
+	run_cmd "$IP ro add 2001:db8:101::2/128 nhid 86 from 2001:db8:91::1"
+	log_test $? 2 "IPv6 route can not use src routing with external nexthop"
+
+	# check cleanup path on invalid metric
+	run_cmd "$IP ro add 2001:db8:101::2/128 nhid 86 congctl lock foo"
+	log_test $? 2 "IPv6 route with invalid metric"
+
 	# rpfilter and default route
 	$IP nexthop flush >/dev/null 2>&1
 	run_cmd "ip netns exec me ip6tables -t mangle -I PREROUTING 1 -m rpfilter --invert -j DROP"
@@ -1365,6 +1373,10 @@ ipv4_fcnal_runtime()
 	run_cmd "$IP ro add 172.16.101.1/32 nhid 22 scope host"
 	run_cmd "$IP nexthop replace id 22 via 172.16.2.2 dev veth3"
 	log_test $? 2 "Nexthop replace with invalid scope for existing route"
+
+	# check cleanup path on invalid metric
+	run_cmd "$IP ro add 172.16.101.2/32 nhid 22 congctl lock foo"
+	log_test $? 2 "IPv4 route with invalid metric"
 
 	#
 	# add route with nexthop and check traffic
@@ -2066,6 +2078,7 @@ basic_res()
 		"id 101 index 0 nhid 2 id 101 index 1 nhid 2 id 101 index 2 nhid 1 id 101 index 3 nhid 1"
 	log_test $? 0 "Dump all nexthop buckets in a group"
 
+	sleep 0.1
 	(( $($IP -j nexthop bucket list id 101 |
 	     jq '[.[] | select(.bucket.idle_time > 0 and
 	                       .bucket.idle_time < 2)] | length') == 4 ))

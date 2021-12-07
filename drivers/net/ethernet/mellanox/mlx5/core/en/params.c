@@ -167,6 +167,18 @@ u16 mlx5e_get_rq_headroom(struct mlx5_core_dev *mdev,
 	return is_linear_skb ? mlx5e_get_linear_rq_headroom(params, xsk) : 0;
 }
 
+struct mlx5e_lro_param mlx5e_get_lro_param(struct mlx5e_params *params)
+{
+	struct mlx5e_lro_param lro_param;
+
+	lro_param = (struct mlx5e_lro_param) {
+		.enabled = params->lro_en,
+		.timeout = params->lro_timeout,
+	};
+
+	return lro_param;
+}
+
 u16 mlx5e_calc_sq_stop_room(struct mlx5_core_dev *mdev, struct mlx5e_params *params)
 {
 	bool is_mpwqe = MLX5E_GET_PFLAG(params, MLX5E_PFLAG_SKB_TX_MPWQE);
@@ -201,7 +213,7 @@ int mlx5e_validate_params(struct mlx5_core_dev *mdev, struct mlx5e_params *param
 
 static struct dim_cq_moder mlx5e_get_def_tx_moderation(u8 cq_period_mode)
 {
-	struct dim_cq_moder moder;
+	struct dim_cq_moder moder = {};
 
 	moder.cq_period_mode = cq_period_mode;
 	moder.pkts = MLX5E_PARAMS_DEFAULT_TX_CQ_MODERATION_PKTS;
@@ -214,7 +226,7 @@ static struct dim_cq_moder mlx5e_get_def_tx_moderation(u8 cq_period_mode)
 
 static struct dim_cq_moder mlx5e_get_def_rx_moderation(u8 cq_period_mode)
 {
-	struct dim_cq_moder moder;
+	struct dim_cq_moder moder = {};
 
 	moder.cq_period_mode = cq_period_mode;
 	moder.pkts = MLX5E_PARAMS_DEFAULT_RX_CQ_MODERATION_PKTS;
@@ -623,7 +635,7 @@ static u8 mlx5e_build_icosq_log_wq_sz(struct mlx5e_params *params,
 
 static u8 mlx5e_build_async_icosq_log_wq_sz(struct mlx5_core_dev *mdev)
 {
-	if (mlx5_accel_is_ktls_rx(mdev))
+	if (mlx5e_accel_is_ktls_rx(mdev))
 		return MLX5E_PARAMS_DEFAULT_LOG_SQ_SIZE;
 
 	return MLX5E_PARAMS_MINIMUM_LOG_SQ_SIZE;
@@ -652,7 +664,7 @@ static void mlx5e_build_async_icosq_param(struct mlx5_core_dev *mdev,
 
 	mlx5e_build_sq_param_common(mdev, param);
 	param->stop_room = mlx5e_stop_room_for_wqe(1); /* for XSK NOP */
-	param->is_tls = mlx5_accel_is_ktls_rx(mdev);
+	param->is_tls = mlx5e_accel_is_ktls_rx(mdev);
 	if (param->is_tls)
 		param->stop_room += mlx5e_stop_room_for_wqe(1); /* for TLS RX resync NOP */
 	MLX5_SET(sqc, sqc, reg_umr, MLX5_CAP_ETH(mdev, reg_umr_sq));

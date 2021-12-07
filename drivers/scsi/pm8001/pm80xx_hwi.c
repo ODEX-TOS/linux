@@ -140,7 +140,7 @@ ssize_t pm80xx_get_fatal_dump(struct device *cdev,
 		pm8001_ha->fatal_bar_loc = 0;
 	}
 
-	/* Read until accum_len is retrived */
+	/* Read until accum_len is retrieved */
 	accum_len = pm8001_mr32(fatal_table_address,
 				MPI_FATAL_EDUMP_TABLE_ACCUM_LEN);
 	/* Determine length of data between previously stored transfer length
@@ -1011,7 +1011,7 @@ static int mpi_init_check(struct pm8001_hba_info *pm8001_ha)
 			   value);
 		return -EBUSY;
 	}
-	/* check the MPI-State for initialization upto 100ms*/
+	/* check the MPI-State for initialization up to 100ms*/
 	max_wait_count = 5;/* 100 msec */
 	do {
 		msleep(FW_READY_INTERVAL);
@@ -1093,7 +1093,7 @@ static int init_pci_device_addresses(struct pm8001_hba_info *pm8001_ha)
 
 	value = pm8001_cr32(pm8001_ha, 0, MSGU_SCRATCH_PAD_0);
 
-	/**
+	/*
 	 * lower 26 bits of SCRATCHPAD0 register describes offset within the
 	 * PCIe BAR where the MPI configuration table is present
 	 */
@@ -1101,7 +1101,7 @@ static int init_pci_device_addresses(struct pm8001_hba_info *pm8001_ha)
 
 	pm8001_dbg(pm8001_ha, DEV, "Scratchpad 0 Offset: 0x%x value 0x%x\n",
 		   offset, value);
-	/**
+	/*
 	 * Upper 6 bits describe the offset within PCI config space where BAR
 	 * is located.
 	 */
@@ -1109,7 +1109,7 @@ static int init_pci_device_addresses(struct pm8001_hba_info *pm8001_ha)
 	pcibar = get_pci_bar_index(pcilogic);
 	pm8001_dbg(pm8001_ha, INIT, "Scratchpad 0 PCI BAR: %d\n", pcibar);
 
-	/**
+	/*
 	 * Make sure the offset falls inside the ioremapped PCI BAR
 	 */
 	if (offset > pm8001_ha->io_mem[pcibar].memsize) {
@@ -1121,7 +1121,7 @@ static int init_pci_device_addresses(struct pm8001_hba_info *pm8001_ha)
 	pm8001_ha->main_cfg_tbl_addr = base_addr =
 		pm8001_ha->io_mem[pcibar].memvirtaddr + offset;
 
-	/**
+	/*
 	 * Validate main configuration table address: first DWord should read
 	 * "PMCS"
 	 */
@@ -1385,7 +1385,7 @@ pm80xx_get_encrypt_info(struct pm8001_hba_info *pm8001_ha)
 }
 
 /**
- * pm80xx_encrypt_update - update flash with encryption informtion
+ * pm80xx_encrypt_update - update flash with encryption information
  * @pm8001_ha: our hba card information.
  */
 static int pm80xx_encrypt_update(struct pm8001_hba_info *pm8001_ha)
@@ -1422,7 +1422,7 @@ static int pm80xx_encrypt_update(struct pm8001_hba_info *pm8001_ha)
 }
 
 /**
- * pm80xx_chip_init - the main init function that initialize whole PM8001 chip.
+ * pm80xx_chip_init - the main init function that initializes whole PM8001 chip.
  * @pm8001_ha: our hba card information
  */
 static int pm80xx_chip_init(struct pm8001_hba_info *pm8001_ha)
@@ -1541,7 +1541,7 @@ static int mpi_uninit_check(struct pm8001_hba_info *pm8001_ha)
 }
 
 /**
- * pm80xx_fatal_errors - returns non zero *ONLY* when fatal errors
+ * pm80xx_fatal_errors - returns non-zero *ONLY* when fatal errors
  * @pm8001_ha: our hba card information
  *
  * Fatal errors are recoverable only after a host reboot.
@@ -1576,8 +1576,8 @@ pm80xx_fatal_errors(struct pm8001_hba_info *pm8001_ha)
 }
 
 /**
- * pm80xx_chip_soft_rst - soft reset the PM8001 chip, so that the clear all
- * the FW register status to the originated status.
+ * pm80xx_chip_soft_rst - soft reset the PM8001 chip, so that all
+ * FW register status are reset to the originated status.
  * @pm8001_ha: our hba card information
  */
 
@@ -1895,13 +1895,13 @@ static void pm80xx_send_read_log(struct pm8001_hba_info *pm8001_ha,
 }
 
 /**
- * mpi_ssp_completion- process the event that FW response to the SSP request.
+ * mpi_ssp_completion - process the event that FW response to the SSP request.
  * @pm8001_ha: our hba card information
  * @piomb: the message contents of this outbound message.
  *
  * When FW has completed a ssp request for example a IO request, after it has
- * filled the SG data with the data, it will trigger this event represent
- * that he has finished the job,please check the coresponding buffer.
+ * filled the SG data with the data, it will trigger this event representing
+ * that he has finished the job; please check the corresponding buffer.
  * So we will tell the caller who maybe waiting the result to tell upper layer
  * that the task has been finished.
  */
@@ -1952,7 +1952,7 @@ mpi_ssp_completion(struct pm8001_hba_info *pm8001_ha, void *piomb)
 			   param);
 		if (param == 0) {
 			ts->resp = SAS_TASK_COMPLETE;
-			ts->stat = SAM_STAT_GOOD;
+			ts->stat = SAS_SAM_STAT_GOOD;
 		} else {
 			ts->resp = SAS_TASK_COMPLETE;
 			ts->stat = SAS_PROTO_RESPONSE;
@@ -2379,7 +2379,8 @@ static void mpi_ssp_event(struct pm8001_hba_info *pm8001_ha, void *piomb)
 
 /*See the comments for mpi_ssp_completion */
 static void
-mpi_sata_completion(struct pm8001_hba_info *pm8001_ha, void *piomb)
+mpi_sata_completion(struct pm8001_hba_info *pm8001_ha,
+		struct outbound_queue_table *circularQ, void *piomb)
 {
 	struct sas_task *t;
 	struct pm8001_ccb_info *ccb;
@@ -2487,7 +2488,7 @@ mpi_sata_completion(struct pm8001_hba_info *pm8001_ha, void *piomb)
 		pm8001_dbg(pm8001_ha, IO, "IO_SUCCESS\n");
 		if (param == 0) {
 			ts->resp = SAS_TASK_COMPLETE;
-			ts->stat = SAM_STAT_GOOD;
+			ts->stat = SAS_SAM_STAT_GOOD;
 			/* check if response is for SEND READ LOG */
 			if (pm8001_dev &&
 				(pm8001_dev->id & NCQ_READ_LOG_FLAG)) {
@@ -2616,7 +2617,11 @@ mpi_sata_completion(struct pm8001_hba_info *pm8001_ha, void *piomb)
 				IO_OPEN_CNX_ERROR_IT_NEXUS_LOSS);
 			ts->resp = SAS_TASK_UNDELIVERED;
 			ts->stat = SAS_QUEUE_FULL;
+			spin_unlock_irqrestore(&circularQ->oq_lock,
+					circularQ->lock_flags);
 			pm8001_ccb_task_free_done(pm8001_ha, t, ccb, tag);
+			spin_lock_irqsave(&circularQ->oq_lock,
+					circularQ->lock_flags);
 			return;
 		}
 		break;
@@ -2632,7 +2637,11 @@ mpi_sata_completion(struct pm8001_hba_info *pm8001_ha, void *piomb)
 				IO_OPEN_CNX_ERROR_IT_NEXUS_LOSS);
 			ts->resp = SAS_TASK_UNDELIVERED;
 			ts->stat = SAS_QUEUE_FULL;
+			spin_unlock_irqrestore(&circularQ->oq_lock,
+					circularQ->lock_flags);
 			pm8001_ccb_task_free_done(pm8001_ha, t, ccb, tag);
+			spin_lock_irqsave(&circularQ->oq_lock,
+					circularQ->lock_flags);
 			return;
 		}
 		break;
@@ -2656,7 +2665,11 @@ mpi_sata_completion(struct pm8001_hba_info *pm8001_ha, void *piomb)
 				IO_OPEN_CNX_ERROR_STP_RESOURCES_BUSY);
 			ts->resp = SAS_TASK_UNDELIVERED;
 			ts->stat = SAS_QUEUE_FULL;
+			spin_unlock_irqrestore(&circularQ->oq_lock,
+					circularQ->lock_flags);
 			pm8001_ccb_task_free_done(pm8001_ha, t, ccb, tag);
+			spin_lock_irqsave(&circularQ->oq_lock,
+					circularQ->lock_flags);
 			return;
 		}
 		break;
@@ -2727,7 +2740,11 @@ mpi_sata_completion(struct pm8001_hba_info *pm8001_ha, void *piomb)
 					IO_DS_NON_OPERATIONAL);
 			ts->resp = SAS_TASK_UNDELIVERED;
 			ts->stat = SAS_QUEUE_FULL;
+			spin_unlock_irqrestore(&circularQ->oq_lock,
+					circularQ->lock_flags);
 			pm8001_ccb_task_free_done(pm8001_ha, t, ccb, tag);
+			spin_lock_irqsave(&circularQ->oq_lock,
+					circularQ->lock_flags);
 			return;
 		}
 		break;
@@ -2747,7 +2764,11 @@ mpi_sata_completion(struct pm8001_hba_info *pm8001_ha, void *piomb)
 					IO_DS_IN_ERROR);
 			ts->resp = SAS_TASK_UNDELIVERED;
 			ts->stat = SAS_QUEUE_FULL;
+			spin_unlock_irqrestore(&circularQ->oq_lock,
+					circularQ->lock_flags);
 			pm8001_ccb_task_free_done(pm8001_ha, t, ccb, tag);
+			spin_lock_irqsave(&circularQ->oq_lock,
+					circularQ->lock_flags);
 			return;
 		}
 		break;
@@ -2785,12 +2806,17 @@ mpi_sata_completion(struct pm8001_hba_info *pm8001_ha, void *piomb)
 		pm8001_ccb_task_free(pm8001_ha, t, ccb, tag);
 	} else {
 		spin_unlock_irqrestore(&t->task_state_lock, flags);
+		spin_unlock_irqrestore(&circularQ->oq_lock,
+				circularQ->lock_flags);
 		pm8001_ccb_task_free_done(pm8001_ha, t, ccb, tag);
+		spin_lock_irqsave(&circularQ->oq_lock,
+				circularQ->lock_flags);
 	}
 }
 
 /*See the comments for mpi_ssp_completion */
-static void mpi_sata_event(struct pm8001_hba_info *pm8001_ha, void *piomb)
+static void mpi_sata_event(struct pm8001_hba_info *pm8001_ha,
+		struct outbound_queue_table *circularQ, void *piomb)
 {
 	struct sas_task *t;
 	struct task_status_struct *ts;
@@ -2890,7 +2916,11 @@ static void mpi_sata_event(struct pm8001_hba_info *pm8001_ha, void *piomb)
 				IO_OPEN_CNX_ERROR_IT_NEXUS_LOSS);
 			ts->resp = SAS_TASK_COMPLETE;
 			ts->stat = SAS_QUEUE_FULL;
+			spin_unlock_irqrestore(&circularQ->oq_lock,
+					circularQ->lock_flags);
 			pm8001_ccb_task_free_done(pm8001_ha, t, ccb, tag);
+			spin_lock_irqsave(&circularQ->oq_lock,
+					circularQ->lock_flags);
 			return;
 		}
 		break;
@@ -3002,7 +3032,11 @@ static void mpi_sata_event(struct pm8001_hba_info *pm8001_ha, void *piomb)
 		pm8001_ccb_task_free(pm8001_ha, t, ccb, tag);
 	} else {
 		spin_unlock_irqrestore(&t->task_state_lock, flags);
+		spin_unlock_irqrestore(&circularQ->oq_lock,
+				circularQ->lock_flags);
 		pm8001_ccb_task_free_done(pm8001_ha, t, ccb, tag);
+		spin_lock_irqsave(&circularQ->oq_lock,
+				circularQ->lock_flags);
 	}
 }
 
@@ -3042,7 +3076,7 @@ mpi_smp_completion(struct pm8001_hba_info *pm8001_ha, void *piomb)
 	case IO_SUCCESS:
 		pm8001_dbg(pm8001_ha, IO, "IO_SUCCESS\n");
 		ts->resp = SAS_TASK_COMPLETE;
-		ts->stat = SAM_STAT_GOOD;
+		ts->stat = SAS_SAM_STAT_GOOD;
 		if (pm8001_dev)
 			atomic_dec(&pm8001_dev->running_req);
 		if (pm8001_ha->smp_exp_mode == SMP_DIRECT) {
@@ -3084,17 +3118,17 @@ mpi_smp_completion(struct pm8001_hba_info *pm8001_ha, void *piomb)
 	case IO_ERROR_HW_TIMEOUT:
 		pm8001_dbg(pm8001_ha, IO, "IO_ERROR_HW_TIMEOUT\n");
 		ts->resp = SAS_TASK_COMPLETE;
-		ts->stat = SAM_STAT_BUSY;
+		ts->stat = SAS_SAM_STAT_BUSY;
 		break;
 	case IO_XFER_ERROR_BREAK:
 		pm8001_dbg(pm8001_ha, IO, "IO_XFER_ERROR_BREAK\n");
 		ts->resp = SAS_TASK_COMPLETE;
-		ts->stat = SAM_STAT_BUSY;
+		ts->stat = SAS_SAM_STAT_BUSY;
 		break;
 	case IO_XFER_ERROR_PHY_NOT_READY:
 		pm8001_dbg(pm8001_ha, IO, "IO_XFER_ERROR_PHY_NOT_READY\n");
 		ts->resp = SAS_TASK_COMPLETE;
-		ts->stat = SAM_STAT_BUSY;
+		ts->stat = SAS_SAM_STAT_BUSY;
 		break;
 	case IO_OPEN_CNX_ERROR_PROTOCOL_NOT_SUPPORTED:
 		pm8001_dbg(pm8001_ha, IO,
@@ -3217,7 +3251,7 @@ mpi_smp_completion(struct pm8001_hba_info *pm8001_ha, void *piomb)
 }
 
 /**
- * pm80xx_hw_event_ack_req- For PM8001,some events need to acknowage to FW.
+ * pm80xx_hw_event_ack_req- For PM8001, some events need to acknowledge to FW.
  * @pm8001_ha: our hba card information
  * @Qnum: the outbound queue message number.
  * @SEA: source of event to ack
@@ -3275,7 +3309,7 @@ static void hw_event_port_recover(struct pm8001_hba_info *pm8001_ha,
 }
 
 /**
- * hw_event_sas_phy_up -FW tells me a SAS phy up event.
+ * hw_event_sas_phy_up - FW tells me a SAS phy up event.
  * @pm8001_ha: our hba card information
  * @piomb: IO message buffer
  */
@@ -3353,7 +3387,7 @@ hw_event_sas_phy_up(struct pm8001_hba_info *pm8001_ha, void *piomb)
 }
 
 /**
- * hw_event_sata_phy_up -FW tells me a SATA phy up event.
+ * hw_event_sata_phy_up - FW tells me a SATA phy up event.
  * @pm8001_ha: our hba card information
  * @piomb: IO message buffer
  */
@@ -3400,7 +3434,7 @@ hw_event_sata_phy_up(struct pm8001_hba_info *pm8001_ha, void *piomb)
 }
 
 /**
- * hw_event_phy_down -we should notify the libsas the phy is down.
+ * hw_event_phy_down - we should notify the libsas the phy is down.
  * @pm8001_ha: our hba card information
  * @piomb: IO message buffer
  */
@@ -3500,7 +3534,7 @@ static int mpi_phy_start_resp(struct pm8001_hba_info *pm8001_ha, void *piomb)
 }
 
 /**
- * mpi_thermal_hw_event -The hw event has come.
+ * mpi_thermal_hw_event - a thermal hw event has come.
  * @pm8001_ha: our hba card information
  * @piomb: IO message buffer
  */
@@ -3530,7 +3564,7 @@ static int mpi_thermal_hw_event(struct pm8001_hba_info *pm8001_ha, void *piomb)
 }
 
 /**
- * mpi_hw_event -The hw event has come.
+ * mpi_hw_event - The hw event has come.
  * @pm8001_ha: our hba card information
  * @piomb: IO message buffer
  */
@@ -3902,7 +3936,8 @@ static int ssp_coalesced_comp_resp(struct pm8001_hba_info *pm8001_ha,
  * @pm8001_ha: our hba card information
  * @piomb: IO message buffer
  */
-static void process_one_iomb(struct pm8001_hba_info *pm8001_ha, void *piomb)
+static void process_one_iomb(struct pm8001_hba_info *pm8001_ha,
+		struct outbound_queue_table *circularQ, void *piomb)
 {
 	__le32 pHeader = *(__le32 *)piomb;
 	u32 opc = (u32)((le32_to_cpu(pHeader)) & 0xFFF);
@@ -3944,11 +3979,11 @@ static void process_one_iomb(struct pm8001_hba_info *pm8001_ha, void *piomb)
 		break;
 	case OPC_OUB_SATA_COMP:
 		pm8001_dbg(pm8001_ha, MSG, "OPC_OUB_SATA_COMP\n");
-		mpi_sata_completion(pm8001_ha, piomb);
+		mpi_sata_completion(pm8001_ha, circularQ, piomb);
 		break;
 	case OPC_OUB_SATA_EVENT:
 		pm8001_dbg(pm8001_ha, MSG, "OPC_OUB_SATA_EVENT\n");
-		mpi_sata_event(pm8001_ha, piomb);
+		mpi_sata_event(pm8001_ha, circularQ, piomb);
 		break;
 	case OPC_OUB_SSP_EVENT:
 		pm8001_dbg(pm8001_ha, MSG, "OPC_OUB_SSP_EVENT\n");
@@ -4025,7 +4060,7 @@ static void process_one_iomb(struct pm8001_hba_info *pm8001_ha, void *piomb)
 	case OPC_OUB_SET_DEV_INFO:
 		pm8001_dbg(pm8001_ha, MSG, "OPC_OUB_SET_DEV_INFO\n");
 		break;
-	/* spcv specifc commands */
+	/* spcv specific commands */
 	case OPC_OUB_PHY_START_RESP:
 		pm8001_dbg(pm8001_ha, MSG,
 			   "OPC_OUB_PHY_START_RESP opcode:%x\n", opc);
@@ -4117,7 +4152,6 @@ static int process_oq(struct pm8001_hba_info *pm8001_ha, u8 vec)
 	void *pMsg1 = NULL;
 	u8 bc;
 	u32 ret = MPI_IO_STATUS_FAIL;
-	unsigned long flags;
 	u32 regval;
 
 	if (vec == (pm8001_ha->max_q_num - 1)) {
@@ -4134,7 +4168,7 @@ static int process_oq(struct pm8001_hba_info *pm8001_ha, u8 vec)
 		}
 	}
 	circularQ = &pm8001_ha->outbnd_q_tbl[vec];
-	spin_lock_irqsave(&circularQ->oq_lock, flags);
+	spin_lock_irqsave(&circularQ->oq_lock, circularQ->lock_flags);
 	do {
 		/* spurious interrupt during setup if kexec-ing and
 		 * driver doing a doorbell access w/ the pre-kexec oq
@@ -4145,7 +4179,8 @@ static int process_oq(struct pm8001_hba_info *pm8001_ha, u8 vec)
 		ret = pm8001_mpi_msg_consume(pm8001_ha, circularQ, &pMsg1, &bc);
 		if (MPI_IO_STATUS_SUCCESS == ret) {
 			/* process the outbound message */
-			process_one_iomb(pm8001_ha, (void *)(pMsg1 - 4));
+			process_one_iomb(pm8001_ha, circularQ,
+						(void *)(pMsg1 - 4));
 			/* free the message from the outbound circular buffer */
 			pm8001_mpi_msg_free_set(pm8001_ha, pMsg1,
 							circularQ, bc);
@@ -4160,7 +4195,7 @@ static int process_oq(struct pm8001_hba_info *pm8001_ha, u8 vec)
 				break;
 		}
 	} while (1);
-	spin_unlock_irqrestore(&circularQ->oq_lock, flags);
+	spin_unlock_irqrestore(&circularQ->oq_lock, circularQ->lock_flags);
 	return ret;
 }
 
@@ -4186,7 +4221,7 @@ static void build_smp_cmd(u32 deviceID, __le32 hTag,
 }
 
 /**
- * pm80xx_chip_smp_req - send a SMP task to FW
+ * pm80xx_chip_smp_req - send an SMP task to FW
  * @pm8001_ha: our hba card information.
  * @ccb: the ccb information this request used.
  */
@@ -4346,7 +4381,7 @@ static int check_enc_sat_cmd(struct sas_task *task)
 }
 
 /**
- * pm80xx_chip_ssp_io_req - send a SSP task to FW
+ * pm80xx_chip_ssp_io_req - send an SSP task to FW
  * @pm8001_ha: our hba card information.
  * @ccb: the ccb information this request used.
  */
@@ -4699,7 +4734,7 @@ static int pm80xx_chip_sata_req(struct pm8001_hba_info *pm8001_ha,
 
 			spin_lock_irqsave(&task->task_state_lock, flags);
 			ts->resp = SAS_TASK_COMPLETE;
-			ts->stat = SAM_STAT_GOOD;
+			ts->stat = SAS_SAM_STAT_GOOD;
 			task->task_state_flags &= ~SAS_TASK_STATE_PENDING;
 			task->task_state_flags &= ~SAS_TASK_AT_INITIATOR;
 			task->task_state_flags |= SAS_TASK_STATE_DONE;
@@ -4750,13 +4785,13 @@ pm80xx_chip_phy_start_req(struct pm8001_hba_info *pm8001_ha, u8 phy_id)
 	payload.ase_sh_lm_slr_phyid = cpu_to_le32(SPINHOLD_DISABLE |
 			LINKMODE_AUTO | pm8001_ha->link_rate | phy_id);
 	/* SSC Disable and SAS Analog ST configuration */
-	/**
+	/*
 	payload.ase_sh_lm_slr_phyid =
 		cpu_to_le32(SSC_DISABLE_30 | SAS_ASE | SPINHOLD_DISABLE |
 		LINKMODE_AUTO | LINKRATE_15 | LINKRATE_30 | LINKRATE_60 |
 		phy_id);
 	Have to add "SAS PHY Analog Setup SPASTI 1 Byte" Based on need
-	**/
+	*/
 
 	payload.sas_identify.dev_type = SAS_END_DEVICE;
 	payload.sas_identify.initiator_bits = SAS_PROTOCOL_ALL;

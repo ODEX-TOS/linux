@@ -1733,7 +1733,7 @@ int btrfs_qgroup_trace_extent_post(struct btrfs_trans_handle *trans,
 	ASSERT(trans != NULL);
 
 	ret = btrfs_find_all_roots(NULL, trans->fs_info, bytenr, 0, &old_root,
-				   false, true);
+				   true);
 	if (ret < 0) {
 		trans->fs_info->qgroup_flags |= BTRFS_QGROUP_STATUS_FLAG_INCONSISTENT;
 		btrfs_warn(trans->fs_info,
@@ -2543,7 +2543,7 @@ int btrfs_qgroup_account_extent(struct btrfs_trans_handle *trans, u64 bytenr,
 	int ret = 0;
 
 	/*
-	 * If quotas get disabled meanwhile, the resouces need to be freed and
+	 * If quotas get disabled meanwhile, the resources need to be freed and
 	 * we can't just exit here.
 	 */
 	if (!test_bit(BTRFS_FS_QUOTA_ENABLED, &fs_info->flags))
@@ -2667,7 +2667,7 @@ int btrfs_qgroup_account_extents(struct btrfs_trans_handle *trans)
 			 * current root. It's safe inside commit_transaction().
 			 */
 			ret = btrfs_find_all_roots(trans, fs_info,
-			   record->bytenr, BTRFS_SEQ_LAST, &new_roots, false, false);
+			   record->bytenr, BTRFS_SEQ_LAST, &new_roots, false);
 			if (ret < 0)
 				goto cleanup;
 			if (qgroup_to_skip) {
@@ -3567,13 +3567,7 @@ static int try_flush_qgroup(struct btrfs_root *root)
 	struct btrfs_trans_handle *trans;
 	int ret;
 
-	/*
-	 * Can't hold an open transaction or we run the risk of deadlocking,
-	 * and can't either be under the context of a send operation (where
-	 * current->journal_info is set to BTRFS_SEND_TRANS_STUB), as that
-	 * would result in a crash when starting a transaction and does not
-	 * make sense either (send is a read-only operation).
-	 */
+	/* Can't hold an open transaction or we run the risk of deadlocking. */
 	ASSERT(current->journal_info == NULL);
 	if (WARN_ON(current->journal_info))
 		return 0;

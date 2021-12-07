@@ -465,7 +465,12 @@ static int enetc_streamid_hw_set(struct enetc_ndev_priv *priv,
 	struct streamid_conf *si_conf;
 	u16 data_size;
 	dma_addr_t dma;
+	int port;
 	int err;
+
+	port = enetc_pf_to_port(priv->si->pdev);
+	if (port < 0)
+		return -EINVAL;
 
 	if (sid->index >= priv->psfp_cap.max_streamid)
 		return -EINVAL;
@@ -481,14 +486,16 @@ static int enetc_streamid_hw_set(struct enetc_ndev_priv *priv,
 
 	data_size = sizeof(struct streamid_data);
 	si_data = kzalloc(data_size, __GFP_DMA | GFP_KERNEL);
+	if (!si_data)
+		return -ENOMEM;
 	cbd.length = cpu_to_le16(data_size);
 
 	dma = dma_map_single(&priv->si->pdev->dev, si_data,
 			     data_size, DMA_FROM_DEVICE);
 	if (dma_mapping_error(&priv->si->pdev->dev, dma)) {
 		netdev_err(priv->si->ndev, "DMA mapping failed!\n");
-		kfree(si_data);
-		return -ENOMEM;
+		err = -ENOMEM;
+		goto out;
 	}
 
 	cbd.addr[0] = cpu_to_le32(lower_32_bits(dma));
@@ -499,7 +506,7 @@ static int enetc_streamid_hw_set(struct enetc_ndev_priv *priv,
 
 	si_conf = &cbd.sid_set;
 	/* Only one port supported for one entry, set itself */
-	si_conf->iports = cpu_to_le32(1 << enetc_pf_to_port(priv->si->pdev));
+	si_conf->iports = cpu_to_le32(1 << port);
 	si_conf->id_type = 1;
 	si_conf->oui[2] = 0x0;
 	si_conf->oui[1] = 0x80;
@@ -507,12 +514,10 @@ static int enetc_streamid_hw_set(struct enetc_ndev_priv *priv,
 
 	err = enetc_send_cmd(priv->si, &cbd);
 	if (err)
-		return -EINVAL;
+		goto out;
 
-	if (!enable) {
-		kfree(si_data);
-		return 0;
-	}
+	if (!enable)
+		goto out;
 
 	/* Enable the entry overwrite again incase space flushed by hardware */
 	memset(&cbd, 0, sizeof(cbd));
@@ -524,7 +529,7 @@ static int enetc_streamid_hw_set(struct enetc_ndev_priv *priv,
 
 	si_conf->en = 0x80;
 	si_conf->stream_handle = cpu_to_le32(sid->handle);
-	si_conf->iports = cpu_to_le32(1 << enetc_pf_to_port(priv->si->pdev));
+	si_conf->iports = cpu_to_le32(1 << port);
 	si_conf->id_type = sid->filtertype;
 	si_conf->oui[2] = 0x0;
 	si_conf->oui[1] = 0x80;
@@ -555,6 +560,10 @@ static int enetc_streamid_hw_set(struct enetc_ndev_priv *priv,
 	}
 
 	err = enetc_send_cmd(priv->si, &cbd);
+out:
+	if (!dma_mapping_error(&priv->si->pdev->dev, dma))
+		dma_unmap_single(&priv->si->pdev->dev, dma, data_size, DMA_FROM_DEVICE);
+
 	kfree(si_data);
 
 	return err;
@@ -567,6 +576,11 @@ static int enetc_streamfilter_hw_set(struct enetc_ndev_priv *priv,
 {
 	struct enetc_cbd cbd = {.cmd = 0};
 	struct sfi_conf *sfi_config;
+	int port;
+
+	port = enetc_pf_to_port(priv->si->pdev);
+	if (port < 0)
+		return -EINVAL;
 
 	cbd.index = cpu_to_le16(sfi->index);
 	cbd.cls = BDCR_CMD_STREAM_FILTER;
@@ -586,8 +600,7 @@ static int enetc_streamfilter_hw_set(struct enetc_ndev_priv *priv,
 	}
 
 	sfi_config->sg_inst_table_index = cpu_to_le16(sfi->gate_id);
-	sfi_config->input_ports =
-		cpu_to_le32(1 << enetc_pf_to_port(priv->si->pdev));
+	sfi_config->input_ports = cpu_to_le32(1 << port);
 
 	/* The priority value which may be matched against the
 	 * frame’s priority value to determine a match for this entry.
@@ -1548,7 +1561,7 @@ int enetc_setup_tc_psfp(struct net_device *ndev, void *type_data)
 {
 	struct enetc_ndev_priv *priv = netdev_priv(ndev);
 	struct flow_block_offload *f = type_data;
-	int err;
+	int port, err;
 
 	err = flow_block_cb_setup_simple(f, &enetc_block_cb_list,
 					 enetc_setup_tc_block_cb,
@@ -1558,10 +1571,18 @@ int enetc_setup_tc_psfp(struct net_device *ndev, void *type_data)
 
 	switch (f->command) {
 	case FLOW_BLOCK_BIND:
-		set_bit(enetc_pf_to_port(priv->si->pdev), &epsfp.dev_bitmap);
+		port = enetc_pf_to_port(priv->si->pdev);
+		if (port < 0)
+			return -EINVAL;
+
+		set_bit(port, &epsfp.dev_bitmap);
 		break;
 	case FLOW_BLOCK_UNBIND:
-		clear_bit(enetc_pf_to_port(priv->si->pdev), &epsfp.dev_bitmap);
+		port = enetc_pf_to_port(priv->si->pdev);
+		if (port < 0)
+			return -EINVAL;
+
+		clear_bit(port, &epsfp.dev_bitmap);
 		if (!epsfp.dev_bitmap)
 			clean_psfp_all();
 		break;

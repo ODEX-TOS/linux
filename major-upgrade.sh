@@ -3,7 +3,13 @@
 set -e
 
 git fetch --all --tags
-read -p "What is the tag you want to merge? " tag
+
+tag="$1"
+if [[ "$tag" == "" ]]; then
+ read -p "What is the tag you want to merge? " tag
+fi
+
+
 git merge -X theirs "$tag" 
 
 mkdir tos-logo

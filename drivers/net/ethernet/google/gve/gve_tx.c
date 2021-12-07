@@ -1,11 +1,12 @@
 // SPDX-License-Identifier: (GPL-2.0 OR MIT)
 /* Google virtual Ethernet (gve) driver
  *
- * Copyright (C) 2015-2019 Google, Inc.
+ * Copyright (C) 2015-2021 Google, Inc.
  */
 
 #include "gve.h"
 #include "gve_adminq.h"
+#include "gve_utils.h"
 #include <linux/ip.h>
 #include <linux/tcp.h>
 #include <linux/vmalloc.h>
@@ -131,14 +132,6 @@ static void gve_tx_free_fifo(struct gve_tx_fifo *fifo, size_t bytes)
 	atomic_add(bytes, &fifo->available);
 }
 
-static void gve_tx_remove_from_block(struct gve_priv *priv, int queue_idx)
-{
-	struct gve_notify_block *block =
-			&priv->ntfy_blocks[gve_tx_idx_to_ntfy(priv, queue_idx)];
-
-	block->tx = NULL;
-}
-
 static int gve_clean_tx_done(struct gve_priv *priv, struct gve_tx_ring *tx,
 			     u32 to_do, bool try_to_wake);
 
@@ -174,16 +167,6 @@ static void gve_tx_free_ring(struct gve_priv *priv, int idx)
 	netif_dbg(priv, drv, priv->dev, "freed tx queue %d\n", idx);
 }
 
-static void gve_tx_add_to_block(struct gve_priv *priv, int queue_idx)
-{
-	int ntfy_idx = gve_tx_idx_to_ntfy(priv, queue_idx);
-	struct gve_notify_block *block = &priv->ntfy_blocks[ntfy_idx];
-	struct gve_tx_ring *tx = &priv->tx[queue_idx];
-
-	block->tx = tx;
-	tx->ntfy_id = ntfy_idx;
-}
-
 static int gve_tx_alloc_ring(struct gve_priv *priv, int idx)
 {
 	struct gve_tx_ring *tx = &priv->tx[idx];
@@ -208,7 +191,7 @@ static int gve_tx_alloc_ring(struct gve_priv *priv, int idx)
 	if (!tx->desc)
 		goto abort_with_info;
 
-	tx->raw_addressing = priv->raw_addressing;
+	tx->raw_addressing = priv->queue_format == GVE_GQI_RDA_FORMAT;
 	tx->dev = &priv->pdev->dev;
 	if (!tx->raw_addressing) {
 		tx->tx_fifo.qpl = gve_assign_tx_qpl(priv);
@@ -273,7 +256,7 @@ int gve_tx_alloc_rings(struct gve_priv *priv)
 	return err;
 }
 
-void gve_tx_free_rings(struct gve_priv *priv)
+void gve_tx_free_rings_gqi(struct gve_priv *priv)
 {
 	int i;
 
@@ -320,15 +303,15 @@ static inline int gve_skb_fifo_bytes_required(struct gve_tx_ring *tx,
 static void gve_tx_unmap_buf(struct device *dev, struct gve_tx_buffer_state *info)
 {
 	if (info->skb) {
-		dma_unmap_single(dev, dma_unmap_addr(&info->buf, dma),
-				 dma_unmap_len(&info->buf, len),
+		dma_unmap_single(dev, dma_unmap_addr(info, dma),
+				 dma_unmap_len(info, len),
 				 DMA_TO_DEVICE);
-		dma_unmap_len_set(&info->buf, len, 0);
+		dma_unmap_len_set(info, len, 0);
 	} else {
-		dma_unmap_page(dev, dma_unmap_addr(&info->buf, dma),
-			       dma_unmap_len(&info->buf, len),
+		dma_unmap_page(dev, dma_unmap_addr(info, dma),
+			       dma_unmap_len(info, len),
 			       DMA_TO_DEVICE);
-		dma_unmap_len_set(&info->buf, len, 0);
+		dma_unmap_len_set(info, len, 0);
 	}
 }
 
@@ -508,7 +491,6 @@ static int gve_tx_add_skb_no_copy(struct gve_priv *priv, struct gve_tx_ring *tx,
 	struct gve_tx_buffer_state *info;
 	bool is_gso = skb_is_gso(skb);
 	u32 idx = tx->req & tx->mask;
-	struct gve_tx_dma_buf *buf;
 	u64 addr;
 	u32 len;
 	int i;
@@ -532,9 +514,8 @@ static int gve_tx_add_skb_no_copy(struct gve_priv *priv, struct gve_tx_ring *tx,
 		tx->dma_mapping_error++;
 		goto drop;
 	}
-	buf = &info->buf;
-	dma_unmap_len_set(buf, len, len);
-	dma_unmap_addr_set(buf, dma, addr);
+	dma_unmap_len_set(info, len, len);
+	dma_unmap_addr_set(info, dma, addr);
 
 	payload_nfrags = shinfo->nr_frags;
 	if (hlen < len) {
@@ -566,10 +547,9 @@ static int gve_tx_add_skb_no_copy(struct gve_priv *priv, struct gve_tx_ring *tx,
 			tx->dma_mapping_error++;
 			goto unmap_drop;
 		}
-		buf = &tx->info[idx].buf;
 		tx->info[idx].skb = NULL;
-		dma_unmap_len_set(buf, len, len);
-		dma_unmap_addr_set(buf, dma, addr);
+		dma_unmap_len_set(&tx->info[idx], len, len);
+		dma_unmap_addr_set(&tx->info[idx], dma, addr);
 
 		gve_tx_fill_seg_desc(seg_desc, skb, is_gso, len, addr);
 	}

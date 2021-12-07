@@ -480,7 +480,7 @@ static struct bpf_link *attach_lookup_prog(struct bpf_program *prog)
 	}
 
 	link = bpf_program__attach_netns(prog, net_fd);
-	if (CHECK(IS_ERR(link), "bpf_program__attach_netns", "failed\n")) {
+	if (!ASSERT_OK_PTR(link, "bpf_program__attach_netns")) {
 		errno = -PTR_ERR(link);
 		log_err("failed to attach program '%s' to netns",
 			bpf_program__name(prog));
@@ -598,7 +598,7 @@ close:
 
 static void run_lookup_prog(const struct test *t)
 {
-	int server_fds[MAX_SERVERS] = { -1 };
+	int server_fds[] = { [0 ... MAX_SERVERS - 1] = -1 };
 	int client_fd, reuse_conn_fd = -1;
 	struct bpf_link *lookup_link;
 	int i, err;
@@ -1053,7 +1053,7 @@ static void run_sk_assign(struct test_sk_lookup *skel,
 			  struct bpf_program *lookup_prog,
 			  const char *remote_ip, const char *local_ip)
 {
-	int server_fds[MAX_SERVERS] = { -1 };
+	int server_fds[] = { [0 ... MAX_SERVERS - 1] = -1 };
 	struct bpf_sk_lookup ctx;
 	__u64 server_cookie;
 	int i, err;

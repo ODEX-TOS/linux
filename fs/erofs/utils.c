@@ -2,7 +2,6 @@
 /*
  * Copyright (C) 2018 HUAWEI, Inc.
  *             https://www.huawei.com/
- * Created by Gao Xiang <gaoxiang25@huawei.com>
  */
 #include "internal.h"
 #include <linux/pagevec.h>
@@ -142,7 +141,7 @@ static bool erofs_try_to_release_workgroup(struct erofs_sb_info *sbi,
 	 * however in order to avoid some race conditions, add a
 	 * DBG_BUGON to observe this in advance.
 	 */
-	DBG_BUGON(xa_erase(&sbi->managed_pslots, grp->index) != grp);
+	DBG_BUGON(__xa_erase(&sbi->managed_pslots, grp->index) != grp);
 
 	/* last refcount should be connected with its managed pslot.  */
 	erofs_workgroup_unfreeze(grp, 0);
@@ -157,15 +156,19 @@ static unsigned long erofs_shrink_workstation(struct erofs_sb_info *sbi,
 	unsigned int freed = 0;
 	unsigned long index;
 
+	xa_lock(&sbi->managed_pslots);
 	xa_for_each(&sbi->managed_pslots, index, grp) {
 		/* try to shrink each valid workgroup */
 		if (!erofs_try_to_release_workgroup(sbi, grp))
 			continue;
+		xa_unlock(&sbi->managed_pslots);
 
 		++freed;
 		if (!--nr_shrink)
-			break;
+			return freed;
+		xa_lock(&sbi->managed_pslots);
 	}
+	xa_unlock(&sbi->managed_pslots);
 	return freed;
 }
 
@@ -278,4 +281,3 @@ void erofs_exit_shrinker(void)
 	unregister_shrinker(&erofs_shrinker_info);
 }
 #endif	/* !CONFIG_EROFS_FS_ZIP */
-
