@@ -1,4 +1,7 @@
 #!/bin/bash
+
+set -e
+
 git fetch --all --tags
 read -p "What is the tag you want to merge? " tag
 git merge -X theirs "$tag" 
@@ -14,6 +17,7 @@ cp -r linux/* .
 rm -rf linux
 
 sed -i 's/-arch1/-tos1/g' Makefile
+sed -i 's/-arch2/-tos2/g' Makefile
 sed -i 's/-zen/-tos1/g' Makefile
 bash version.sh
 cp tos-logo/* drivers/video/logo
