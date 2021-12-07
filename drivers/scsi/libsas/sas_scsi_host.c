@@ -919,14 +919,6 @@ int sas_slave_alloc(struct scsi_device *sdev)
 	return 0;
 }
 
-int sas_slave_alloc(struct scsi_device *sdev)
-{
-	if (dev_is_sata(sdev_to_domain_dev(sdev)) && sdev->lun)
-		return -ENXIO;
-
-	return 0;
-}
-
 void sas_target_destroy(struct scsi_target *starget)
 {
 	struct domain_device *found_dev = starget->hostdata;

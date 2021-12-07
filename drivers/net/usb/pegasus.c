@@ -446,9 +446,6 @@ static int enable_net_traffic(struct net_device *dev, struct usb_device *usb)
 		write_mii_word(pegasus, 0, 0x1b, &auxmode);
 	}
 
-	return 0;
-fail:
-	netif_dbg(pegasus, drv, pegasus->net, "%s failed\n", __func__);
 	return ret;
 fail:
 	netif_dbg(pegasus, drv, pegasus->net, "%s failed\n", __func__);

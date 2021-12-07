@@ -618,28 +618,6 @@ static void sk_psock_skb_state(struct sk_psock *psock,
 	spin_unlock_bh(&psock->ingress_lock);
 }
 
-static void sock_drop(struct sock *sk, struct sk_buff *skb)
-{
-	sk_drops_add(sk, skb);
-	kfree_skb(skb);
-}
-
-static void sk_psock_skb_state(struct sk_psock *psock,
-			       struct sk_psock_work_state *state,
-			       struct sk_buff *skb,
-			       int len, int off)
-{
-	spin_lock_bh(&psock->ingress_lock);
-	if (sk_psock_test_state(psock, SK_PSOCK_TX_ENABLED)) {
-		state->skb = skb;
-		state->len = len;
-		state->off = off;
-	} else {
-		sock_drop(psock->sk, skb);
-	}
-	spin_unlock_bh(&psock->ingress_lock);
-}
-
 static void sk_psock_backlog(struct work_struct *work)
 {
 	struct sk_psock *psock = container_of(work, struct sk_psock, work);

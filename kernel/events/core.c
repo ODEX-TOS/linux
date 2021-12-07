@@ -12219,32 +12219,9 @@ SYSCALL_DEFINE5(perf_event_open,
 	}
 
 	if (task) {
-		unsigned int ptrace_mode = PTRACE_MODE_READ_REALCREDS;
-		bool is_capable;
-
 		err = down_read_interruptible(&task->signal->exec_update_lock);
 		if (err)
 			goto err_file;
-
-		is_capable = perfmon_capable();
-		if (attr.sigtrap) {
-			/*
-			 * perf_event_attr::sigtrap sends signals to the other
-			 * task. Require the current task to also have
-			 * CAP_KILL.
-			 */
-			rcu_read_lock();
-			is_capable &= ns_capable(__task_cred(task)->user_ns, CAP_KILL);
-			rcu_read_unlock();
-
-			/*
-			 * If the required capabilities aren't available, checks
-			 * for ptrace permissions: upgrade to ATTACH, since
-			 * sending signals can effectively change the target
-			 * task.
-			 */
-			ptrace_mode = PTRACE_MODE_ATTACH_REALCREDS;
-		}
 
 		/*
 		 * We must hold exec_update_lock across this and any potential

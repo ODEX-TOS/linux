@@ -1781,22 +1781,6 @@ static int si5341_probe(struct i2c_client *client,
 		goto cleanup;
 	}
 
-	/* wait for device to report input clock present and PLL lock */
-	err = regmap_read_poll_timeout(data->regmap, SI5341_STATUS, status,
-		!(status & (SI5341_STATUS_LOSREF | SI5341_STATUS_LOL)),
-	       10000, 250000);
-	if (err) {
-		dev_err(&client->dev, "Error waiting for input clock or PLL lock\n");
-		return err;
-	}
-
-	/* clear sticky alarm bits from initialization */
-	err = regmap_write(data->regmap, SI5341_STATUS_STICKY, 0);
-	if (err) {
-		dev_err(&client->dev, "unable to clear sticky status\n");
-		return err;
-	}
-
 	/* Free the names, clk framework makes copies */
 	for (i = 0; i < data->num_synth; ++i)
 		 devm_kfree(&client->dev, (void *)synth_clock_names[i]);

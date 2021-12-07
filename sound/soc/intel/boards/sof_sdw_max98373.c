@@ -90,11 +90,7 @@ static int mx8373_enable_spk_pin(struct snd_pcm_substream *substream, bool enabl
 
 static int mx8373_sdw_prepare(struct snd_pcm_substream *substream)
 {
-	struct snd_soc_pcm_runtime *rtd = asoc_substream_to_rtd(substream);
-	struct snd_soc_dai *codec_dai;
-	struct snd_soc_dai *cpu_dai;
 	int ret;
-	int j;
 
 	/* according to soc_pcm_prepare dai link prepare is called first */
 	ret = sdw_prepare(substream);

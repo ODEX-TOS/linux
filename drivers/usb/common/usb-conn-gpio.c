@@ -236,10 +236,6 @@ static int usb_conn_probe(struct platform_device *pdev)
 	if (ret)
 		goto put_role_sw;
 
-	ret = usb_conn_psy_register(info);
-	if (ret)
-		goto put_role_sw;
-
 	if (info->id_gpiod) {
 		info->id_irq = gpiod_to_irq(info->id_gpiod);
 		if (info->id_irq < 0) {

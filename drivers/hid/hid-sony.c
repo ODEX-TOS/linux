@@ -661,14 +661,6 @@ static int ghl_init_urb(struct sony_sc *sc, struct usb_device *usbdev,
 	unsigned int pipe;
 	u16 ghl_magic_value = (((HID_OUTPUT_REPORT + 1) << 8) | ghl_magic_data[0]);
 
-static int ghl_init_urb(struct sony_sc *sc, struct usb_device *usbdev)
-{
-	struct usb_ctrlrequest *cr;
-	u16 poke_size;
-	u8 *databuf;
-	unsigned int pipe;
-
-	poke_size = ARRAY_SIZE(ghl_ps3wiiu_magic_data);
 	pipe = usb_sndctrlpipe(usbdev, 0);
 
 	cr = devm_kzalloc(&sc->hdev->dev, sizeof(*cr), GFP_ATOMIC);

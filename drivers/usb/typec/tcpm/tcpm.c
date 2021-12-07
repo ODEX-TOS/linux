@@ -2639,11 +2639,6 @@ static void tcpm_pd_ctrl_request(struct tcpm_port *port,
 							       port->pps_data.active,
 							       port->supply_voltage);
 
-			/* Threshold was relaxed before sending Request. Restore it back. */
-			tcpm_set_auto_vbus_discharge_threshold(port, TYPEC_PWR_MODE_PD,
-							       port->pps_data.active,
-							       port->supply_voltage);
-
 			tcpm_set_state(port, SNK_READY, 0);
 			break;
 		case DR_SWAP_SEND:

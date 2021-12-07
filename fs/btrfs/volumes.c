@@ -5513,14 +5513,6 @@ int btrfs_chunk_alloc_add_chunk_item(struct btrfs_trans_handle *trans,
 			goto out;
 	}
 
-	for (i = 0; i < map->num_stripes; i++) {
-		struct btrfs_device *device = map->stripes[i].dev;
-
-		ret = btrfs_update_device(trans, device);
-		if (ret)
-			goto out;
-	}
-
 	stripe = &chunk->stripe;
 	for (i = 0; i < map->num_stripes; i++) {
 		struct btrfs_device *device = map->stripes[i].dev;

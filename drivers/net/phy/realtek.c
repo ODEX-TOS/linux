@@ -424,19 +424,6 @@ static int rtl821x_resume(struct phy_device *phydev)
 	return 0;
 }
 
-static int rtl821x_resume(struct phy_device *phydev)
-{
-	int ret;
-
-	ret = genphy_resume(phydev);
-	if (ret < 0)
-		return ret;
-
-	msleep(20);
-
-	return 0;
-}
-
 static int rtl8211e_config_init(struct phy_device *phydev)
 {
 	int ret = 0, oldpage;

@@ -165,7 +165,6 @@
 #define     LTSSM_SHIFT				24
 #define     LTSSM_MASK				0x3f
 #define     RC_BAR_CONFIG			0x300
-#define VENDOR_ID_REG				(LMI_BASE_ADDR + 0x44)
 
 /* LTSSM values in CFG_REG */
 enum {

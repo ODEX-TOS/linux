@@ -274,9 +274,6 @@ static int tcf_mirred_act(struct sk_buff *skb, const struct tc_action *a,
 			goto out;
 	}
 
-	/* All mirred/redirected skbs should clear previous ct info */
-	nf_reset_ct(skb2);
-
 	want_ingress = tcf_mirred_act_wants_ingress(m_eaction);
 
 	/* All mirred/redirected skbs should clear previous ct info */

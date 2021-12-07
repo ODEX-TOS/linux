@@ -1294,7 +1294,6 @@ struct dlm_msg *dlm_lowcomms_new_msg(int nodeid, int len, gfp_t allocation,
 				     char **ppc, void (*cb)(struct dlm_mhandle *mh),
 				     struct dlm_mhandle *mh)
 {
-	struct writequeue_entry *e;
 	struct connection *con;
 	struct dlm_msg *msg;
 	int idx;
@@ -1343,12 +1342,10 @@ static void _dlm_lowcomms_commit_msg(struct dlm_msg *msg)
 	spin_unlock(&con->writequeue_lock);
 
 	queue_work(send_workqueue, &con->swork);
-	srcu_read_unlock(&connections_srcu, e->idx);
 	return;
 
 out:
 	spin_unlock(&con->writequeue_lock);
-	srcu_read_unlock(&connections_srcu, e->idx);
 	return;
 }
 
