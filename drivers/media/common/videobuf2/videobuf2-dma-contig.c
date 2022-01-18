@@ -265,7 +265,6 @@ static void *vb2_dc_alloc(struct vb2_buffer *vb,
 	buf->handler.refcount = &buf->refcount;
 	buf->handler.put = vb2_dc_put;
 	buf->handler.arg = buf;
-	buf->vb = vb;
 
 	refcount_set(&buf->refcount, 1);
 

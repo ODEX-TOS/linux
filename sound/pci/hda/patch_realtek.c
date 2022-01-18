@@ -6563,27 +6563,6 @@ static void alc256_fixup_mic_no_presence_and_resume(struct hda_codec *codec,
 	}
 }
 
-static const struct coef_fw alc233_fixup_no_audio_jack_coefs[] = {
-	WRITE_COEF(0x1a, 0x9003), WRITE_COEF(0x1b, 0x0e2b), WRITE_COEF(0x37, 0xfe06),
-	WRITE_COEF(0x38, 0x4981), WRITE_COEF(0x45, 0xd489), WRITE_COEF(0x46, 0x0074),
-	WRITE_COEF(0x49, 0x0149),
-	{}
-};
-
-static void alc233_fixup_no_audio_jack(struct hda_codec *codec,
-				       const struct hda_fixup *fix,
-				       int action)
-{
-	/*
-	 * The audio jack input and output is not detected on the ASRock NUC Box
-	 * 1100 series when cold booting without this fix. Warm rebooting from a
-	 * certain other OS makes the audio functional, as COEF settings are
-	 * preserved in this case. This fix sets these altered COEF values as
-	 * the default.
-	 */
-	alc_process_coef_fw(codec, alc233_fixup_no_audio_jack_coefs);
-}
-
 enum {
 	ALC269_FIXUP_GPIO2,
 	ALC269_FIXUP_SONY_VAIO,
@@ -8534,23 +8513,6 @@ static const struct hda_fixup alc269_fixups[] = {
 		.v.func = alc256_fixup_mic_no_presence_and_resume,
 		.chained = true,
 		.chain_id = ALC269_FIXUP_HEADSET_MODE_NO_HP_MIC
-	},
-	[ALC245_FIXUP_HP_GPIO_LED] = {
-		.type = HDA_FIXUP_FUNC,
-		.v.func = alc245_fixup_hp_gpio_led,
-	},
-	[ALC256_FIXUP_SYSTEM76_MIC_NO_PRESENCE] = {
-		.type = HDA_FIXUP_PINS,
-		.v.pins = (const struct hda_pintbl[]) {
-			{ 0x19, 0x03a11120 }, /* use as headset mic, without its own jack detect */
-			{ }
-		},
-		.chained = true,
-		.chain_id = ALC269_FIXUP_HEADSET_MODE_NO_HP_MIC,
-	},
-	[ALC233_FIXUP_NO_AUDIO_JACK] = {
-		.type = HDA_FIXUP_FUNC,
-		.v.func = alc233_fixup_no_audio_jack,
 	},
 };
 

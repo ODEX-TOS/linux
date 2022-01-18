@@ -368,11 +368,3 @@ int arch_kimage_file_post_load_cleanup(struct kimage *image)
 
 	return kexec_image_post_load_cleanup_default(image);
 }
-
-int arch_kimage_file_post_load_cleanup(struct kimage *image)
-{
-	vfree(image->arch.ipl_buf);
-	image->arch.ipl_buf = NULL;
-
-	return kexec_image_post_load_cleanup_default(image);
-}

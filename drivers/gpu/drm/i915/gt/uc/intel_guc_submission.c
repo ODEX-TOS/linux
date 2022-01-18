@@ -2202,23 +2202,6 @@ static bool context_cant_unblock(struct intel_context *ce)
 		!intel_context_is_pinned(ce);
 }
 
-#define SCHED_STATE_MULTI_BLOCKED_MASK \
-	(SCHED_STATE_BLOCKED_MASK & ~SCHED_STATE_BLOCKED)
-#define SCHED_STATE_NO_UNBLOCK \
-	(SCHED_STATE_MULTI_BLOCKED_MASK | \
-	 SCHED_STATE_PENDING_DISABLE | \
-	 SCHED_STATE_BANNED)
-
-static bool context_cant_unblock(struct intel_context *ce)
-{
-	lockdep_assert_held(&ce->guc_state.lock);
-
-	return (ce->guc_state.sched_state & SCHED_STATE_NO_UNBLOCK) ||
-		context_guc_id_invalid(ce) ||
-		!lrc_desc_registered(ce_to_guc(ce), ce->guc_id) ||
-		!intel_context_is_pinned(ce);
-}
-
 static void guc_context_unblock(struct intel_context *ce)
 {
 	struct intel_guc *guc = ce_to_guc(ce);
