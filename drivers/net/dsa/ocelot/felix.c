@@ -290,8 +290,11 @@ static int felix_setup_mmio_filtering(struct felix *felix)
 		}
 	}
 
-	if (cpu < 0)
+	if (cpu < 0) {
+		kfree(tagging_rule);
+		kfree(redirect_rule);
 		return -EINVAL;
+	}
 
 	tagging_rule->key_type = OCELOT_VCAP_KEY_ETYPE;
 	*(__be16 *)tagging_rule->key.etype.etype.value = htons(ETH_P_1588);
@@ -958,8 +961,10 @@ static int felix_parse_dt(struct felix *felix, phy_interface_t *port_phy_modes)
 	switch_node = dev->of_node;
 
 	ports_node = of_get_child_by_name(switch_node, "ports");
+	if (!ports_node)
+		ports_node = of_get_child_by_name(switch_node, "ethernet-ports");
 	if (!ports_node) {
-		dev_err(dev, "Incorrect bindings: absent \"ports\" node\n");
+		dev_err(dev, "Incorrect bindings: absent \"ports\" or \"ethernet-ports\" node\n");
 		return -ENODEV;
 	}
 

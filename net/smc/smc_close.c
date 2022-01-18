@@ -195,6 +195,7 @@ int smc_close_active(struct smc_sock *smc)
 	int old_state;
 	long timeout;
 	int rc = 0;
+	int rc1 = 0;
 
 	timeout = current->flags & PF_EXITING ?
 		  0 : sock_flag(sk, SOCK_LINGER) ?
@@ -232,8 +233,11 @@ again:
 			/* actively shutdown clcsock before peer close it,
 			 * prevent peer from entering TIME_WAIT state.
 			 */
-			if (smc->clcsock && smc->clcsock->sk)
-				rc = kernel_sock_shutdown(smc->clcsock, SHUT_RDWR);
+			if (smc->clcsock && smc->clcsock->sk) {
+				rc1 = kernel_sock_shutdown(smc->clcsock,
+							   SHUT_RDWR);
+				rc = rc ? rc : rc1;
+			}
 		} else {
 			/* peer event has changed the state */
 			goto again;
@@ -360,9 +364,9 @@ static void smc_close_passive_work(struct work_struct *work)
 	if (rxflags->peer_conn_abort) {
 		/* peer has not received all data */
 		smc_close_passive_abort_received(smc);
-		release_sock(&smc->sk);
+		release_sock(sk);
 		cancel_delayed_work_sync(&conn->tx_work);
-		lock_sock(&smc->sk);
+		lock_sock(sk);
 		goto wakeup;
 	}
 
