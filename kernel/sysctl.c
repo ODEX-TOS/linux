@@ -94,9 +94,6 @@
 #ifdef CONFIG_USER_NS
 #include <linux/user_namespace.h>
 #endif
-#ifdef CONFIG_USER_NS
-#include <linux/user_namespace.h>
-#endif
 
 #if defined(CONFIG_SYSCTL)
 
@@ -1820,15 +1817,6 @@ static struct ctl_table kern_table[] = {
 		.mode		= 0644,
 		.proc_handler	= proc_dointvec,
 	},
-#ifdef CONFIG_USER_NS
-	{
-		.procname	= "unprivileged_userns_clone",
-		.data		= &unprivileged_userns_clone,
-		.maxlen		= sizeof(int),
-		.mode		= 0644,
-		.proc_handler	= proc_dointvec,
-	},
-#endif
 #ifdef CONFIG_USER_NS
 	{
 		.procname	= "unprivileged_userns_clone",
