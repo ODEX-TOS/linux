@@ -345,16 +345,6 @@ static void dsa_master_reset_mtu(struct net_device *dev)
 			   "Unable to reset MTU to exclude DSA overheads\n");
 }
 
-static void dsa_master_reset_mtu(struct net_device *dev)
-{
-	int err;
-
-	err = dev_set_mtu(dev, ETH_DATA_LEN);
-	if (err)
-		netdev_dbg(dev,
-			   "Unable to reset MTU to exclude DSA overheads\n");
-}
-
 int dsa_master_setup(struct net_device *dev, struct dsa_port *cpu_dp)
 {
 	const struct dsa_device_ops *tag_ops = cpu_dp->tag_ops;

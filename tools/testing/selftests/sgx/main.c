@@ -208,8 +208,6 @@ err:
 
 	encl_delete(encl);
 
-	encl_delete(encl);
-
 	return false;
 }
 

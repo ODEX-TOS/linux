@@ -852,7 +852,6 @@ void jbd2_journal_wait_updates(journal_t *journal)
 		if (!transaction)
 			break;
 
-		spin_lock(&transaction->t_handle_lock);
 		prepare_to_wait(&journal->j_wait_updates, &wait,
 				TASK_UNINTERRUPTIBLE);
 		if (!atomic_read(&transaction->t_updates)) {

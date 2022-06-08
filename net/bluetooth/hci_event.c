@@ -5534,11 +5534,6 @@ static void le_conn_complete_evt(struct hci_dev *hdev, u8 status,
 	struct smp_irk *irk;
 	u8 addr_type;
 
-	if (handle > HCI_CONN_HANDLE_MAX) {
-		bt_dev_err(hdev, "Ignoring HCI_LE_Connection_Complete for invalid handle");
-		return;
-	}
-
 	hci_dev_lock(hdev);
 
 	/* All controllers implicitly stop advertising in the event of a

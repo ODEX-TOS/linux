@@ -523,22 +523,6 @@ static int vpif_probe(struct platform_device *pdev)
 	data->capture = pdev_capture;
 	data->display = pdev_display;
 
-	pdev_display->name = "vpif_display";
-	pdev_display->id = -1;
-	pdev_display->resource = res_irq;
-	pdev_display->num_resources = 1;
-	pdev_display->dev.dma_mask = pdev->dev.dma_mask;
-	pdev_display->dev.coherent_dma_mask = pdev->dev.coherent_dma_mask;
-	pdev_display->dev.parent = &pdev->dev;
-	pdev_display->dev.release = vpif_pdev_release;
-
-	ret = platform_device_register(pdev_display);
-	if (ret)
-		goto err_put_pdev_display;
-
-	data->capture = pdev_capture;
-	data->display = pdev_display;
-
 	return 0;
 
 err_put_pdev_display:

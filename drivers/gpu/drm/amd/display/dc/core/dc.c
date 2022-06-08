@@ -3802,48 +3802,6 @@ void dc_enable_dmub_outbox(struct dc *dc)
 
 /**
  * dc_process_dmub_aux_transfer_async - Submits aux command to dmub via inbox message
- *  Function: dc_enable_dmub_notifications
- *
- *  @brief
- *		Calls dc_is_dmub_outbox_supported to check if dmub fw supports outbox
- *		notifications. All DMs shall switch to dc_is_dmub_outbox_supported.
- *		This API shall be removed after switching.
- *
- *  @param
- *		[in] dc: dc structure
- *
- *  @return
- *		True if DMUB FW supports outbox notifications, False otherwise
- *****************************************************************************
- */
-bool dc_enable_dmub_notifications(struct dc *dc)
-{
-	return dc_is_dmub_outbox_supported(dc);
-}
-
-/**
- *****************************************************************************
- *  Function: dc_enable_dmub_outbox
- *
- *  @brief
- *		Enables DMUB unsolicited notifications to x86 via outbox
- *
- *  @param
- *		[in] dc: dc structure
- *
- *  @return
- *		None
- *****************************************************************************
- */
-void dc_enable_dmub_outbox(struct dc *dc)
-{
-	struct dc_context *dc_ctx = dc->ctx;
-
-	dmub_enable_outbox_notification(dc_ctx->dmub_srv);
-}
-
-/**
- *****************************************************************************
  *                                      Sets port index appropriately for legacy DDC
  * @dc: dc structure
  * @link_index: link index

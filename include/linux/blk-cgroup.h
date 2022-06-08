@@ -24,7 +24,6 @@
 #include <linux/atomic.h>
 #include <linux/kthread.h>
 #include <linux/fs.h>
-#include <linux/blk-mq.h>
 
 #define FC_APPID_LEN              129
 

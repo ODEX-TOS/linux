@@ -8901,15 +8901,6 @@ static int __init fan_init(struct ibm_init_struct *iibm)
 					pr_info("secondary fan control enabled\n");
 				}
 			}
-			/* Try and probe the 2nd fan */
-			res = fan2_get_speed(&speed);
-			if (res >= 0) {
-				/* It responded - so let's assume it's there */
-				tp_features.second_fan = 1;
-				tp_features.second_fan_ctl = 1;
-				pr_info("secondary fan control detected & enabled\n");
-			}
-
 		} else {
 			pr_err("ThinkPad ACPI EC access misbehaving, fan status and control unavailable\n");
 			return -ENODEV;

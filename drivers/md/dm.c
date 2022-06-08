@@ -590,8 +590,6 @@ static struct dm_io *alloc_io(struct mapped_device *md, struct bio *bio)
 
 	dm_stats_record_start(&md->stats, &io->stats_aux);
 
-	dm_stats_record_start(&md->stats, &io->stats_aux);
-
 	return io;
 }
 

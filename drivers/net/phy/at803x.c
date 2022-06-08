@@ -875,6 +875,12 @@ static int at803x_probe(struct phy_device *phydev)
 	}
 
 	return 0;
+
+err:
+	if (priv->vddio)
+		regulator_disable(priv->vddio);
+
+	return ret;
 }
 
 static void at803x_remove(struct phy_device *phydev)

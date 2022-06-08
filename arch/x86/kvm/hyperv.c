@@ -1918,7 +1918,6 @@ static u64 kvm_hv_send_ipi(struct kvm_vcpu *vcpu, struct kvm_hv_hcall *hc)
 	u64 sparse_banks[KVM_HV_MAX_SPARSE_VCPU_SET_BITS];
 	u32 vector;
 	bool all_cpus;
-	int i;
 
 	if (hc->code == HVCALL_SEND_IPI) {
 		if (!hc->fast) {

@@ -9,9 +9,6 @@
 #include "cap_helpers.h"
 #include "bind_perm.skel.h"
 
-#include "test_progs.h"
-#include "bind_perm.skel.h"
-
 static int duration;
 
 static int create_netns(void)

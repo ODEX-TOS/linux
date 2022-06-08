@@ -522,11 +522,6 @@ static inline u16 mt7915_eeprom_size(struct mt7915_dev *dev)
 	return is_mt7915(&dev->mt76) ? MT7915_EEPROM_SIZE : MT7916_EEPROM_SIZE;
 }
 
-static inline u16 mt7915_wtbl_size(struct mt7915_dev *dev)
-{
-	return is_mt7915(&dev->mt76) ? MT7915_WTBL_SIZE : MT7916_WTBL_SIZE;
-}
-
 void mt7915_dual_hif_set_irq_mask(struct mt7915_dev *dev, bool write_reg,
 				  u32 clear, u32 set);
 
