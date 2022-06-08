@@ -215,8 +215,6 @@ int dp_panel_read_sink_caps(struct dp_panel *dp_panel,
 			rc = -ETIMEDOUT;
 			goto end;
 		}
-
-		dp_panel_add_fail_safe_mode(connector);
 	}
 
 	if (panel->aux_cfg_update_done) {

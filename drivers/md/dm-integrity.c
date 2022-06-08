@@ -1788,12 +1788,11 @@ again:
 						checksums_ptr - checksums, dio->op == REQ_OP_READ ? TAG_CMP : TAG_WRITE);
 			if (unlikely(r)) {
 				if (r > 0) {
-					char b[BDEVNAME_SIZE];
 					sector_t s;
 
 					s = sector - ((r + ic->tag_size - 1) / ic->tag_size);
-					DMERR_LIMIT("%s: Checksum failed at sector 0x%llx",
-						    bio_devname(bio, b), s);
+					DMERR_LIMIT("%pg: Checksum failed at sector 0x%llx",
+						    bio->bi_bdev, s);
 					r = -EILSEQ;
 					atomic64_inc(&ic->number_of_mismatches);
 					dm_audit_log_bio(DM_MSG_PREFIX, "integrity-checksum",
@@ -4495,8 +4494,6 @@ try_smaller_buffer:
 	}
 
 	if (should_write_sb) {
-		int r;
-
 		init_journal(ic, 0, ic->journal_sections, 0);
 		r = dm_integrity_failed(ic);
 		if (unlikely(r)) {

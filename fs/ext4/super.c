@@ -1199,19 +1199,24 @@ static void ext4_put_super(struct super_block *sb)
 	int aborted = 0;
 	int i, err;
 
+	/*
+	 * Unregister sysfs before destroying jbd2 journal.
+	 * Since we could still access attr_journal_task attribute via sysfs
+	 * path which could have sbi->s_journal->j_task as NULL
+	 * Unregister sysfs before flush sbi->s_error_work.
+	 * Since user may read /proc/fs/ext4/xx/mb_groups during umount, If
+	 * read metadata verify failed then will queue error work.
+	 * flush_stashed_error_work will call start_this_handle may trigger
+	 * BUG_ON.
+	 */
+	ext4_unregister_sysfs(sb);
+
 	ext4_unregister_li_request(sb);
 	ext4_quota_off_umount(sb);
 
 	flush_work(&sbi->s_error_work);
 	destroy_workqueue(sbi->rsv_conversion_wq);
 	ext4_release_orphan_info(sb);
-
-	/*
-	 * Unregister sysfs before destroying jbd2 journal.
-	 * Since we could still access attr_journal_task attribute via sysfs
-	 * path which could have sbi->s_journal->j_task as NULL
-	 */
-	ext4_unregister_sysfs(sb);
 
 	if (sbi->s_journal) {
 		aborted = is_journal_aborted(sbi->s_journal);
@@ -1316,7 +1321,7 @@ static struct inode *ext4_alloc_inode(struct super_block *sb)
 {
 	struct ext4_inode_info *ei;
 
-	ei = kmem_cache_alloc(ext4_inode_cachep, GFP_NOFS);
+	ei = alloc_inode_sb(sb, ext4_inode_cachep, GFP_NOFS);
 	if (!ei)
 		return NULL;
 
@@ -3486,8 +3491,9 @@ static loff_t ext4_max_size(int blkbits, int has_huge_files)
  */
 static loff_t ext4_max_bitmap_size(int bits, int has_huge_files)
 {
-	unsigned long long upper_limit, res = EXT4_NDIR_BLOCKS;
+	loff_t upper_limit, res = EXT4_NDIR_BLOCKS;
 	int meta_blocks;
+	unsigned int ppb = 1 << (bits - 2);
 
 	/*
 	 * This is calculated to be the largest file size for a dense, block
@@ -3519,27 +3525,42 @@ static loff_t ext4_max_bitmap_size(int bits, int has_huge_files)
 
 	}
 
+	/* Compute how many blocks we can address by block tree */
+	res += ppb;
+	res += ppb * ppb;
+	res += ((loff_t)ppb) * ppb * ppb;
+	/* Compute how many metadata blocks are needed */
+	meta_blocks = 1;
+	meta_blocks += 1 + ppb;
+	meta_blocks += 1 + ppb + ppb * ppb;
+	/* Does block tree limit file size? */
+	if (res + meta_blocks <= upper_limit)
+		goto check_lfs;
+
+	res = upper_limit;
+	/* How many metadata blocks are needed for addressing upper_limit? */
+	upper_limit -= EXT4_NDIR_BLOCKS;
 	/* indirect blocks */
 	meta_blocks = 1;
+	upper_limit -= ppb;
 	/* double indirect blocks */
-	meta_blocks += 1 + (1LL << (bits-2));
-	/* tripple indirect blocks */
-	meta_blocks += 1 + (1LL << (bits-2)) + (1LL << (2*(bits-2)));
-
-	upper_limit -= meta_blocks;
-	upper_limit <<= bits;
-
-	res += 1LL << (bits-2);
-	res += 1LL << (2*(bits-2));
-	res += 1LL << (3*(bits-2));
+	if (upper_limit < ppb * ppb) {
+		meta_blocks += 1 + DIV_ROUND_UP_ULL(upper_limit, ppb);
+		res -= meta_blocks;
+		goto check_lfs;
+	}
+	meta_blocks += 1 + ppb;
+	upper_limit -= ppb * ppb;
+	/* tripple indirect blocks for the rest */
+	meta_blocks += 1 + DIV_ROUND_UP_ULL(upper_limit, ppb) +
+		DIV_ROUND_UP_ULL(upper_limit, ppb*ppb);
+	res -= meta_blocks;
+check_lfs:
 	res <<= bits;
-	if (res > upper_limit)
-		res = upper_limit;
-
 	if (res > MAX_LFS_FILESIZE)
 		res = MAX_LFS_FILESIZE;
 
-	return (loff_t)res;
+	return res;
 }
 
 static ext4_fsblk_t descriptor_loc(struct super_block *sb,

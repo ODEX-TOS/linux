@@ -6,6 +6,7 @@
  * Copyright (c) 2021 Google
  */
 
+#include <linux/if_arp.h>
 #include <linux/if_link.h>
 #include <linux/mctp.h>
 #include <linux/netdevice.h>
@@ -119,7 +120,7 @@ static int mctp_dump_addrinfo(struct sk_buff *skb, struct netlink_callback *cb)
 	struct ifaddrmsg *hdr;
 	struct mctp_dev *mdev;
 	int ifindex;
-	int idx, rc;
+	int idx = 0, rc;
 
 	hdr = nlmsg_data(cb->nlh);
 	// filter by ifindex if requested
@@ -222,7 +223,7 @@ static int mctp_rtm_newaddr(struct sk_buff *skb, struct nlmsghdr *nlh,
 	if (!mdev)
 		return -ENODEV;
 
-	if (!mctp_address_ok(addr->s_addr))
+	if (!mctp_address_unicast(addr->s_addr))
 		return -EINVAL;
 
 	/* Prevent duplicates. Under RTNL so don't need to lock for reading */
@@ -312,6 +313,7 @@ void mctp_dev_hold(struct mctp_dev *mdev)
 void mctp_dev_put(struct mctp_dev *mdev)
 {
 	if (mdev && refcount_dec_and_test(&mdev->refs)) {
+		kfree(mdev->addrs);
 		dev_put(mdev->dev);
 		kfree_rcu(mdev, rcu);
 	}
@@ -427,10 +429,10 @@ static void mctp_unregister(struct net_device *dev)
 	struct mctp_dev *mdev;
 
 	mdev = mctp_dev_get_rtnl(dev);
-	if (mctp_known(dev) != (bool)mdev) {
+	if (mdev && !mctp_known(dev)) {
 		// Sanity check, should match what was set in mctp_register
-		netdev_warn(dev, "%s: mdev pointer %d but type (%d) match is %d",
-			    __func__, (bool)mdev, mctp_known(dev), dev->type);
+		netdev_warn(dev, "%s: BUG mctp_ptr set for unknown type %d",
+			    __func__, dev->type);
 		return;
 	}
 	if (!mdev)
@@ -440,7 +442,6 @@ static void mctp_unregister(struct net_device *dev)
 
 	mctp_route_remove_dev(mdev);
 	mctp_neigh_remove_dev(mdev);
-	kfree(mdev->addrs);
 
 	mctp_dev_put(mdev);
 }
@@ -454,7 +455,7 @@ static int mctp_register(struct net_device *dev)
 
 	if (mdev) {
 		if (!mctp_known(dev))
-			netdev_warn(dev, "%s: mctp_dev set for unknown type %d",
+			netdev_warn(dev, "%s: BUG mctp_ptr set for unknown type %d",
 				    __func__, dev->type);
 		return 0;
 	}
