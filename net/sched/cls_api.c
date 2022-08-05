@@ -3517,11 +3517,13 @@ static int tc_setup_offload_act(struct tc_action *act,
 				struct netlink_ext_ack *extack)
 {
 #ifdef CONFIG_NET_CLS_ACT
-	if (act->ops->offload_act_setup)
+	if (act->ops->offload_act_setup) {
 		return act->ops->offload_act_setup(act, entry, index_inc, true,
 						   extack);
-	else
+	} else {
+		NL_SET_ERR_MSG(extack, "Action does not support offload");
 		return -EOPNOTSUPP;
+	}
 #else
 	return 0;
 #endif
@@ -3531,7 +3533,7 @@ int tc_setup_action(struct flow_action *flow_action,
 		    struct tc_action *actions[],
 		    struct netlink_ext_ack *extack)
 {
-	int i, j, index, err = 0;
+	int i, j, k, index, err = 0;
 	struct tc_action *act;
 
 	BUILD_BUG_ON(TCA_ACT_HW_STATS_ANY != FLOW_ACTION_HW_STATS_ANY);
@@ -3551,14 +3553,18 @@ int tc_setup_action(struct flow_action *flow_action,
 		if (err)
 			goto err_out_locked;
 
-		entry->hw_stats = tc_act_hw_stats(act->hw_stats);
-		entry->hw_index = act->tcfa_index;
 		index = 0;
 		err = tc_setup_offload_act(act, entry, &index, extack);
-		if (!err)
-			j += index;
-		else
+		if (err)
 			goto err_out_locked;
+
+		for (k = 0; k < index ; k++) {
+			entry[k].hw_stats = tc_act_hw_stats(act->hw_stats);
+			entry[k].hw_index = act->tcfa_index;
+		}
+
+		j += index;
+
 		spin_unlock_bh(&act->tcfa_lock);
 	}
 

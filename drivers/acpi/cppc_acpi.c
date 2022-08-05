@@ -315,7 +315,7 @@ static int send_pcc_cmd(int pcc_ss_id, u16 cmd)
 		goto end;
 	}
 
-	/* wait for completion and check for PCC errro bit */
+	/* wait for completion and check for PCC error bit */
 	ret = check_pcc_chan(pcc_ss_id, true);
 
 	if (pcc_ss_data->pcc_mrtt)
@@ -433,6 +433,24 @@ bool acpi_cpc_valid(void)
 	return true;
 }
 EXPORT_SYMBOL_GPL(acpi_cpc_valid);
+
+bool cppc_allow_fast_switch(void)
+{
+	struct cpc_register_resource *desired_reg;
+	struct cpc_desc *cpc_ptr;
+	int cpu;
+
+	for_each_possible_cpu(cpu) {
+		cpc_ptr = per_cpu(cpc_desc_ptr, cpu);
+		desired_reg = &cpc_ptr->cpc_regs[DESIRED_PERF];
+		if (!CPC_IN_SYSTEM_MEMORY(desired_reg) &&
+				!CPC_IN_SYSTEM_IO(desired_reg))
+			return false;
+	}
+
+	return true;
+}
+EXPORT_SYMBOL_GPL(cppc_allow_fast_switch);
 
 /**
  * acpi_get_psd_map - Map the CPUs in the freq domain of a given cpu
@@ -764,7 +782,8 @@ int acpi_cppc_processor_probe(struct acpi_processor *pr)
 
 					if (!osc_cpc_flexible_adr_space_confirmed) {
 						pr_debug("Flexible address space capability not supported\n");
-						goto out_free;
+						if (!cpc_supported_by_cpu())
+							goto out_free;
 					}
 
 					addr = ioremap(gas_t->address, gas_t->bit_width/8);
@@ -791,7 +810,8 @@ int acpi_cppc_processor_probe(struct acpi_processor *pr)
 				}
 				if (!osc_cpc_flexible_adr_space_confirmed) {
 					pr_debug("Flexible address space capability not supported\n");
-					goto out_free;
+					if (!cpc_supported_by_cpu())
+						goto out_free;
 				}
 			} else {
 				if (gas_t->space_id != ACPI_ADR_SPACE_FIXED_HARDWARE || !cpc_ffh_supported()) {
