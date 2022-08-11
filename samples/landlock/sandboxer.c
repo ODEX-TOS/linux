@@ -167,8 +167,6 @@ out_free_name:
 
 /* clang-format on */
 
-/* clang-format on */
-
 int main(const int argc, char *const argv[], char *const *const envp)
 {
 	const char *cmd_path;

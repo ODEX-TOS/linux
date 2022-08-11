@@ -2356,17 +2356,6 @@ qca8k_port_change_mtu(struct dsa_switch *ds, int port, int new_mtu)
 	if (priv->port_enabled_map & BIT(6))
 		qca8k_port_set_status(priv, 6, 0);
 
-	/* To change the MAX_FRAME_SIZE the cpu ports must be off or
-	 * the switch panics.
-	 * Turn off both cpu ports before applying the new value to prevent
-	 * this.
-	 */
-	if (priv->port_sts[0].enabled)
-		qca8k_port_set_status(priv, 0, 0);
-
-	if (priv->port_sts[6].enabled)
-		qca8k_port_set_status(priv, 6, 0);
-
 	/* Include L2 header / FCS length */
 	ret = qca8k_write(priv, QCA8K_MAX_FRAME_SIZE, new_mtu + ETH_HLEN + ETH_FCS_LEN);
 

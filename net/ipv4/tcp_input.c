@@ -5795,11 +5795,6 @@ reset:
 	tcp_reset(sk, skb);
 	__kfree_skb(skb);
 	return false;
-
-reset:
-	tcp_reset(sk, skb);
-	__kfree_skb(skb);
-	return false;
 }
 
 /*

@@ -2989,15 +2989,6 @@ void sev_init_vmcb(struct vcpu_svm *svm)
 		sev_es_init_vmcb(svm);
 }
 
-void sev_init_vmcb(struct vcpu_svm *svm)
-{
-	svm->vmcb->control.nested_ctl |= SVM_NESTED_CTL_SEV_ENABLE;
-	clr_exception_intercept(svm, UD_VECTOR);
-
-	if (sev_es_guest(svm->vcpu.kvm))
-		sev_es_init_vmcb(svm);
-}
-
 void sev_es_vcpu_reset(struct vcpu_svm *svm)
 {
 	/*

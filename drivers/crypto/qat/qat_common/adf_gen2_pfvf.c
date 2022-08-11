@@ -107,44 +107,6 @@ static u32 adf_gen2_disable_pending_vf2pf_interrupts(void __iomem *pmisc_addr)
 	return pending;
 }
 
-static u32 adf_gen2_disable_pending_vf2pf_interrupts(void __iomem *pmisc_addr)
-{
-	u32 sources, disabled, pending;
-	u32 errsou3, errmsk3;
-
-	/* Get the interrupt sources triggered by VFs */
-	errsou3 = ADF_CSR_RD(pmisc_addr, ADF_GEN2_ERRSOU3);
-	sources = ADF_GEN2_ERR_REG_VF2PF(errsou3);
-
-	if (!sources)
-		return 0;
-
-	/* Get the already disabled interrupts */
-	errmsk3 = ADF_CSR_RD(pmisc_addr, ADF_GEN2_ERRMSK3);
-	disabled = ADF_GEN2_ERR_REG_VF2PF(errmsk3);
-
-	pending = sources & ~disabled;
-	if (!pending)
-		return 0;
-
-	/* Due to HW limitations, when disabling the interrupts, we can't
-	 * just disable the requested sources, as this would lead to missed
-	 * interrupts if ERRSOU3 changes just before writing to ERRMSK3.
-	 * To work around it, disable all and re-enable only the sources that
-	 * are not in vf_mask and were not already disabled. Re-enabling will
-	 * trigger a new interrupt for the sources that have changed in the
-	 * meantime, if any.
-	 */
-	errmsk3 |= ADF_GEN2_ERR_MSK_VF2PF(ADF_GEN2_VF_MSK);
-	ADF_CSR_WR(pmisc_addr, ADF_GEN2_ERRMSK3, errmsk3);
-
-	errmsk3 &= ADF_GEN2_ERR_MSK_VF2PF(sources | disabled);
-	ADF_CSR_WR(pmisc_addr, ADF_GEN2_ERRMSK3, errmsk3);
-
-	/* Return the sources of the (new) interrupt(s) */
-	return pending;
-}
-
 static u32 gen2_csr_get_int_bit(enum gen2_csr_pos offset)
 {
 	return ADF_PFVF_INT << offset;

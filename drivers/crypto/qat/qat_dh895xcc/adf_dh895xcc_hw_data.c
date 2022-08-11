@@ -189,54 +189,6 @@ static u32 disable_pending_vf2pf_interrupts(void __iomem *pmisc_addr)
 	return pending;
 }
 
-static u32 disable_pending_vf2pf_interrupts(void __iomem *pmisc_addr)
-{
-	u32 sources, pending, disabled;
-	u32 errsou3, errmsk3;
-	u32 errsou5, errmsk5;
-
-	/* Get the interrupt sources triggered by VFs */
-	errsou3 = ADF_CSR_RD(pmisc_addr, ADF_GEN2_ERRSOU3);
-	errsou5 = ADF_CSR_RD(pmisc_addr, ADF_GEN2_ERRSOU5);
-	sources = ADF_DH895XCC_ERR_REG_VF2PF_L(errsou3)
-		  | ADF_DH895XCC_ERR_REG_VF2PF_U(errsou5);
-
-	if (!sources)
-		return 0;
-
-	/* Get the already disabled interrupts */
-	errmsk3 = ADF_CSR_RD(pmisc_addr, ADF_GEN2_ERRMSK3);
-	errmsk5 = ADF_CSR_RD(pmisc_addr, ADF_GEN2_ERRMSK5);
-	disabled = ADF_DH895XCC_ERR_REG_VF2PF_L(errmsk3)
-		   | ADF_DH895XCC_ERR_REG_VF2PF_U(errmsk5);
-
-	pending = sources & ~disabled;
-	if (!pending)
-		return 0;
-
-	/* Due to HW limitations, when disabling the interrupts, we can't
-	 * just disable the requested sources, as this would lead to missed
-	 * interrupts if sources changes just before writing to ERRMSK3 and
-	 * ERRMSK5.
-	 * To work around it, disable all and re-enable only the sources that
-	 * are not in vf_mask and were not already disabled. Re-enabling will
-	 * trigger a new interrupt for the sources that have changed in the
-	 * meantime, if any.
-	 */
-	errmsk3 |= ADF_DH895XCC_ERR_MSK_VF2PF_L(ADF_DH895XCC_VF_MSK);
-	errmsk5 |= ADF_DH895XCC_ERR_MSK_VF2PF_U(ADF_DH895XCC_VF_MSK);
-	ADF_CSR_WR(pmisc_addr, ADF_GEN2_ERRMSK3, errmsk3);
-	ADF_CSR_WR(pmisc_addr, ADF_GEN2_ERRMSK5, errmsk5);
-
-	errmsk3 &= ADF_DH895XCC_ERR_MSK_VF2PF_L(sources | disabled);
-	errmsk5 &= ADF_DH895XCC_ERR_MSK_VF2PF_U(sources | disabled);
-	ADF_CSR_WR(pmisc_addr, ADF_GEN2_ERRMSK3, errmsk3);
-	ADF_CSR_WR(pmisc_addr, ADF_GEN2_ERRMSK5, errmsk5);
-
-	/* Return the sources of the (new) interrupt(s) */
-	return pending;
-}
-
 static void configure_iov_threads(struct adf_accel_dev *accel_dev, bool enable)
 {
 	adf_gen2_cfg_iov_thds(accel_dev, enable,

@@ -149,9 +149,9 @@ static const struct sc27xx_adc_linear_graph big_scale_graph_calib = {
 	3600, 733,
 };
 
-static const struct sc27xx_adc_linear_graph sc2731_small_scale_graph_calib = {
-	1000, 838,
-	100, 84,
+static const struct sc27xx_adc_linear_graph small_scale_graph_calib = {
+	1000, 833,
+	100, 80,
 };
 
 static int sc27xx_adc_get_calib_data(u32 calib_data, int calib_adc)

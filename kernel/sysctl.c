@@ -84,9 +84,6 @@
 #ifdef CONFIG_USER_NS
 #include <linux/user_namespace.h>
 #endif
-#ifdef CONFIG_USER_NS
-#include <linux/user_namespace.h>
-#endif
 
 #if defined(CONFIG_SYSCTL)
 
