@@ -495,12 +495,12 @@ static int __do_proc_dointvec(void *tbl_data, struct ctl_table *table,
 	int *i, vleft, first = 1, err = 0;
 	size_t left;
 	char *p;
-	
+
 	if (!tbl_data || !table->maxlen || !*lenp || (*ppos && !write)) {
 		*lenp = 0;
 		return 0;
 	}
-	
+
 	i = (int *) tbl_data;
 	vleft = table->maxlen / sizeof(*i);
 	left = *lenp;
@@ -732,7 +732,7 @@ int proc_dobool(struct ctl_table *table, int write, void *buffer,
  * @ppos: file position
  *
  * Reads/writes up to table->maxlen/sizeof(unsigned int) integer
- * values from/to the user buffer, treated as an ASCII string. 
+ * values from/to the user buffer, treated as an ASCII string.
  *
  * Returns 0 on success.
  */
@@ -1243,6 +1243,30 @@ static int do_proc_dointvec_ms_jiffies_conv(bool *negp, unsigned long *lvalp,
 	return 0;
 }
 
+static int do_proc_dointvec_ms_jiffies_minmax_conv(bool *negp, unsigned long *lvalp,
+						int *valp, int write, void *data)
+{
+	int tmp, ret;
+	struct do_proc_dointvec_minmax_conv_param *param = data;
+	/*
+	 * If writing, first do so via a temporary local int so we can
+	 * bounds-check it before touching *valp.
+	 */
+	int *ip = write ? &tmp : valp;
+
+	ret = do_proc_dointvec_ms_jiffies_conv(negp, lvalp, ip, write, data);
+	if (ret)
+		return ret;
+
+	if (write) {
+		if ((param->min && *param->min > tmp) ||
+				(param->max && *param->max < tmp))
+			return -EINVAL;
+		*valp = tmp;
+	}
+	return 0;
+}
+
 /**
  * proc_dointvec_jiffies - read a vector of integers as seconds
  * @table: the sysctl table
@@ -1252,7 +1276,7 @@ static int do_proc_dointvec_ms_jiffies_conv(bool *negp, unsigned long *lvalp,
  * @ppos: file position
  *
  * Reads/writes up to table->maxlen/sizeof(unsigned int) integer
- * values from/to the user buffer, treated as an ASCII string. 
+ * values from/to the user buffer, treated as an ASCII string.
  * The values read are assumed to be in seconds, and are converted into
  * jiffies.
  *
@@ -1265,6 +1289,17 @@ int proc_dointvec_jiffies(struct ctl_table *table, int write,
 		    	    do_proc_dointvec_jiffies_conv,NULL);
 }
 
+int proc_dointvec_ms_jiffies_minmax(struct ctl_table *table, int write,
+			  void *buffer, size_t *lenp, loff_t *ppos)
+{
+	struct do_proc_dointvec_minmax_conv_param param = {
+		.min = (int *) table->extra1,
+		.max = (int *) table->extra2,
+	};
+	return do_proc_dointvec(table, write, buffer, lenp, ppos,
+			do_proc_dointvec_ms_jiffies_minmax_conv, &param);
+}
+
 /**
  * proc_dointvec_userhz_jiffies - read a vector of integers as 1/USER_HZ seconds
  * @table: the sysctl table
@@ -1274,8 +1309,8 @@ int proc_dointvec_jiffies(struct ctl_table *table, int write,
  * @ppos: pointer to the file position
  *
  * Reads/writes up to table->maxlen/sizeof(unsigned int) integer
- * values from/to the user buffer, treated as an ASCII string. 
- * The values read are assumed to be in 1/USER_HZ seconds, and 
+ * values from/to the user buffer, treated as an ASCII string.
+ * The values read are assumed to be in 1/USER_HZ seconds, and
  * are converted into jiffies.
  *
  * Returns 0 on success.
@@ -1283,8 +1318,8 @@ int proc_dointvec_jiffies(struct ctl_table *table, int write,
 int proc_dointvec_userhz_jiffies(struct ctl_table *table, int write,
 				 void *buffer, size_t *lenp, loff_t *ppos)
 {
-    return do_proc_dointvec(table,write,buffer,lenp,ppos,
-		    	    do_proc_dointvec_userhz_jiffies_conv,NULL);
+	return do_proc_dointvec(table, write, buffer, lenp, ppos,
+				do_proc_dointvec_userhz_jiffies_conv, NULL);
 }
 
 /**
@@ -1525,6 +1560,12 @@ int proc_dou8vec_minmax(struct ctl_table *table, int write,
 
 int proc_dointvec_jiffies(struct ctl_table *table, int write,
 		    void *buffer, size_t *lenp, loff_t *ppos)
+{
+	return -ENOSYS;
+}
+
+int proc_dointvec_ms_jiffies_minmax(struct ctl_table *table, int write,
+				    void *buffer, size_t *lenp, loff_t *ppos)
 {
 	return -ENOSYS;
 }
@@ -2032,7 +2073,7 @@ static struct ctl_table kern_table[] = {
 		.extra1		= SYSCTL_ZERO,
 		.extra2		= SYSCTL_ONE,
 	},
-#if defined(CONFIG_TREE_RCU)
+#ifdef CONFIG_TREE_RCU
 	{
 		.procname	= "panic_on_rcu_stall",
 		.data		= &sysctl_panic_on_rcu_stall,
@@ -2042,8 +2083,6 @@ static struct ctl_table kern_table[] = {
 		.extra1		= SYSCTL_ZERO,
 		.extra2		= SYSCTL_ONE,
 	},
-#endif
-#if defined(CONFIG_TREE_RCU)
 	{
 		.procname	= "max_rcu_stall_to_panic",
 		.data		= &sysctl_max_rcu_stall_to_panic,

@@ -199,7 +199,7 @@ static u64 calc_chunk_size(const struct btrfs_fs_info *fs_info, u64 flags)
 	ASSERT(flags & BTRFS_BLOCK_GROUP_TYPE_MASK);
 
 	if (flags & BTRFS_BLOCK_GROUP_DATA)
-		return SZ_1G;
+		return BTRFS_MAX_DATA_CHUNK_SIZE;
 	else if (flags & BTRFS_BLOCK_GROUP_SYSTEM)
 		return SZ_32M;
 
@@ -1368,7 +1368,7 @@ static void priority_reclaim_metadata_space(struct btrfs_fs_info *fs_info,
 	to_reclaim = btrfs_calc_reclaim_metadata_size(fs_info, space_info);
 	/*
 	 * This is the priority reclaim path, so to_reclaim could be >0 still
-	 * because we may have only satisified the priority tickets and still
+	 * because we may have only satisfied the priority tickets and still
 	 * left non priority tickets on the list.  We would then have
 	 * to_reclaim but ->bytes == 0.
 	 */
