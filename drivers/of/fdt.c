@@ -828,15 +828,6 @@ uint32_t __init of_get_flat_dt_phandle(unsigned long node)
 	return fdt_get_phandle(initial_boot_params, node);
 }
 
-struct fdt_scan_status {
-	const char *name;
-	int namelen;
-	int depth;
-	int found;
-	int (*iterator)(unsigned long node, const char *uname, int depth, void *data);
-	void *data;
-};
-
 const char * __init of_flat_dt_get_machine_name(void)
 {
 	const char *name;
@@ -936,6 +927,8 @@ static void __init early_init_dt_check_for_initrd(unsigned long node)
 	if (!prop)
 		return;
 	end = of_read_number(prop, len/4);
+	if (start > end)
+		return;
 
 	__early_init_dt_declare_initrd(start, end);
 	phys_initrd_start = start;
@@ -1106,7 +1099,7 @@ u64 __init dt_mem_next_cell(int s, const __be32 **cellp)
  */
 int __init early_init_dt_scan_memory(void)
 {
-	int node;
+	int node, found_memory = 0;
 	const void *fdt = initial_boot_params;
 
 	fdt_for_each_subnode(node, fdt, 0) {
@@ -1146,6 +1139,8 @@ int __init early_init_dt_scan_memory(void)
 
 			early_init_dt_add_memory_arch(base, size);
 
+			found_memory = 1;
+
 			if (!hotpluggable)
 				continue;
 
@@ -1154,7 +1149,7 @@ int __init early_init_dt_scan_memory(void)
 					base, base + size);
 		}
 	}
-	return 0;
+	return found_memory;
 }
 
 int __init early_init_dt_scan_chosen(char *cmdline)
@@ -1168,37 +1163,13 @@ int __init early_init_dt_scan_chosen(char *cmdline)
 	if (node < 0)
 		node = fdt_path_offset(fdt, "/chosen@0");
 	if (node < 0)
-		return -ENOENT;
+		/* Handle the cmdline config options even if no /chosen node */
+		goto handle_cmdline;
 
 	chosen_node_offset = node;
 
 	early_init_dt_check_for_initrd(node);
 	early_init_dt_check_for_elfcorehdr(node);
-
-	/* Retrieve command line */
-	p = of_get_flat_dt_prop(node, "bootargs", &l);
-	if (p != NULL && l > 0)
-		strlcpy(cmdline, p, min(l, COMMAND_LINE_SIZE));
-
-	/*
-	 * CONFIG_CMDLINE is meant to be a default in case nothing else
-	 * managed to set the command line, unless CONFIG_CMDLINE_FORCE
-	 * is set in which case we override whatever was found earlier.
-	 */
-#ifdef CONFIG_CMDLINE
-#if defined(CONFIG_CMDLINE_EXTEND)
-	strlcat(cmdline, " ", COMMAND_LINE_SIZE);
-	strlcat(cmdline, CONFIG_CMDLINE, COMMAND_LINE_SIZE);
-#elif defined(CONFIG_CMDLINE_FORCE)
-	strlcpy(cmdline, CONFIG_CMDLINE, COMMAND_LINE_SIZE);
-#else
-	/* No arguments from boot loader, use kernel's  cmdl*/
-	if (!((char *)cmdline)[0])
-		strlcpy(cmdline, CONFIG_CMDLINE, COMMAND_LINE_SIZE);
-#endif
-#endif /* CONFIG_CMDLINE */
-
-	pr_debug("Command line is: %s\n", (char *)cmdline);
 
 	rng_seed = of_get_flat_dt_prop(node, "rng-seed", &l);
 	if (rng_seed && l > 0) {
@@ -1211,6 +1182,32 @@ int __init early_init_dt_scan_chosen(char *cmdline)
 		of_fdt_crc32 = crc32_be(~0, initial_boot_params,
 				fdt_totalsize(initial_boot_params));
 	}
+
+	/* Retrieve command line */
+	p = of_get_flat_dt_prop(node, "bootargs", &l);
+	if (p != NULL && l > 0)
+		strscpy(cmdline, p, min(l, COMMAND_LINE_SIZE));
+
+handle_cmdline:
+	/*
+	 * CONFIG_CMDLINE is meant to be a default in case nothing else
+	 * managed to set the command line, unless CONFIG_CMDLINE_FORCE
+	 * is set in which case we override whatever was found earlier.
+	 */
+#ifdef CONFIG_CMDLINE
+#if defined(CONFIG_CMDLINE_EXTEND)
+	strlcat(cmdline, " ", COMMAND_LINE_SIZE);
+	strlcat(cmdline, CONFIG_CMDLINE, COMMAND_LINE_SIZE);
+#elif defined(CONFIG_CMDLINE_FORCE)
+	strscpy(cmdline, CONFIG_CMDLINE, COMMAND_LINE_SIZE);
+#else
+	/* No arguments from boot loader, use kernel's  cmdl*/
+	if (!((char *)cmdline)[0])
+		strscpy(cmdline, CONFIG_CMDLINE, COMMAND_LINE_SIZE);
+#endif
+#endif /* CONFIG_CMDLINE */
+
+	pr_debug("Command line is: %s\n", (char *)cmdline);
 
 	return 0;
 }

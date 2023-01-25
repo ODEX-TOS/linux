@@ -621,7 +621,6 @@ void load_ucode_intel_ap(void)
 	else
 		iup = &intel_ucode_patch;
 
-reget:
 	if (!*iup) {
 		patch = __load_ucode_intel(&uci);
 		if (!patch)
@@ -632,12 +631,7 @@ reget:
 
 	uci.mc = *iup;
 
-	if (apply_microcode_early(&uci, true)) {
-		/* Mixed-silicon system? Try to refetch the proper patch: */
-		*iup = NULL;
-
-		goto reget;
-	}
+	apply_microcode_early(&uci, true);
 }
 
 static struct microcode_intel *find_patch(struct ucode_cpu_info *uci)
@@ -916,24 +910,7 @@ static enum ucode_state request_microcode_fw(int cpu, struct device *device,
 	return ret;
 }
 
-static enum ucode_state
-request_microcode_user(int cpu, const void __user *buf, size_t size)
-{
-	struct iov_iter iter;
-	struct iovec iov;
-
-	if (is_blacklisted(cpu))
-		return UCODE_NFOUND;
-
-	iov.iov_base = (void __user *)buf;
-	iov.iov_len = size;
-	iov_iter_init(&iter, WRITE, &iov, 1, size);
-
-	return generic_load_microcode(cpu, &iter);
-}
-
 static struct microcode_ops microcode_intel_ops = {
-	.request_microcode_user		  = request_microcode_user,
 	.request_microcode_fw             = request_microcode_fw,
 	.collect_cpu_info                 = collect_cpu_info,
 	.apply_microcode                  = apply_microcode_intel,

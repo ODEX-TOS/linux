@@ -1261,7 +1261,7 @@ out:
 }
 
 /* Submit the packet */
-static int netcp_ndo_start_xmit(struct sk_buff *skb, struct net_device *ndev)
+static netdev_tx_t netcp_ndo_start_xmit(struct sk_buff *skb, struct net_device *ndev)
 {
 	struct netcp_intf *netcp = netdev_priv(ndev);
 	struct netcp_stats *tx_stats = &netcp->stats;
@@ -2095,7 +2095,7 @@ static int netcp_create_interface(struct netcp_device *netcp_device,
 	}
 
 	/* NAPI register */
-	netif_napi_add(ndev, &netcp->rx_napi, netcp_rx_poll, NAPI_POLL_WEIGHT);
+	netif_napi_add(ndev, &netcp->rx_napi, netcp_rx_poll);
 	netif_napi_add_tx(ndev, &netcp->tx_napi, netcp_tx_poll);
 
 	/* Register the network device */

@@ -29,7 +29,7 @@
 #include "ehci-fsl.h"
 
 #define DRIVER_DESC "Freescale EHCI Host controller driver"
-#define DRV_NAME "ehci-fsl"
+#define DRV_NAME "fsl-ehci"
 
 static struct hc_driver __read_mostly fsl_ehci_hc_driver;
 
@@ -721,8 +721,6 @@ static int __init ehci_fsl_init(void)
 {
 	if (usb_disabled())
 		return -ENODEV;
-
-	pr_info(DRV_NAME ": " DRIVER_DESC "\n");
 
 	ehci_init_driver(&fsl_ehci_hc_driver, &ehci_fsl_overrides);
 

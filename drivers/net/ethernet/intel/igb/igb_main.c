@@ -1202,8 +1202,12 @@ static int igb_alloc_q_vector(struct igb_adapter *adapter,
 	if (!q_vector) {
 		q_vector = kzalloc(size, GFP_KERNEL);
 	} else if (size > ksize(q_vector)) {
-		kfree_rcu(q_vector, rcu);
-		q_vector = kzalloc(size, GFP_KERNEL);
+		struct igb_q_vector *new_q_vector;
+
+		new_q_vector = kzalloc(size, GFP_KERNEL);
+		if (new_q_vector)
+			kfree_rcu(q_vector, rcu);
+		q_vector = new_q_vector;
 	} else {
 		memset(q_vector, 0, size);
 	}
@@ -1211,8 +1215,7 @@ static int igb_alloc_q_vector(struct igb_adapter *adapter,
 		return -ENOMEM;
 
 	/* initialize NAPI */
-	netif_napi_add(adapter->netdev, &q_vector->napi,
-		       igb_poll, 64);
+	netif_napi_add(adapter->netdev, &q_vector->napi, igb_poll);
 
 	/* tie q_vector and adapter together */
 	adapter->q_vector[v_idx] = q_vector;
@@ -3138,7 +3141,7 @@ static s32 igb_init_i2c(struct igb_adapter *adapter)
 	adapter->i2c_algo.data = adapter;
 	adapter->i2c_adap.algo_data = &adapter->i2c_algo;
 	adapter->i2c_adap.dev.parent = &adapter->pdev->dev;
-	strlcpy(adapter->i2c_adap.name, "igb BB",
+	strscpy(adapter->i2c_adap.name, "igb BB",
 		sizeof(adapter->i2c_adap.name));
 	status = i2c_bit_add_bus(&adapter->i2c_adap);
 	return status;
@@ -7522,7 +7525,7 @@ static void igb_vf_reset_msg(struct igb_adapter *adapter, u32 vf)
 {
 	struct e1000_hw *hw = &adapter->hw;
 	unsigned char *vf_mac = adapter->vf_data[vf].vf_mac_addresses;
-	u32 reg, msgbuf[3];
+	u32 reg, msgbuf[3] = {};
 	u8 *addr = (u8 *)(&msgbuf[1]);
 
 	/* process all the same items cleared in a function level reset */

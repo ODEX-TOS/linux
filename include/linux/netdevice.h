@@ -171,31 +171,38 @@ static inline bool dev_xmit_complete(int rc)
  *	(unsigned long) so they can be read and written atomically.
  */
 
+#define NET_DEV_STAT(FIELD)			\
+	union {					\
+		unsigned long FIELD;		\
+		atomic_long_t __##FIELD;	\
+	}
+
 struct net_device_stats {
-	unsigned long	rx_packets;
-	unsigned long	tx_packets;
-	unsigned long	rx_bytes;
-	unsigned long	tx_bytes;
-	unsigned long	rx_errors;
-	unsigned long	tx_errors;
-	unsigned long	rx_dropped;
-	unsigned long	tx_dropped;
-	unsigned long	multicast;
-	unsigned long	collisions;
-	unsigned long	rx_length_errors;
-	unsigned long	rx_over_errors;
-	unsigned long	rx_crc_errors;
-	unsigned long	rx_frame_errors;
-	unsigned long	rx_fifo_errors;
-	unsigned long	rx_missed_errors;
-	unsigned long	tx_aborted_errors;
-	unsigned long	tx_carrier_errors;
-	unsigned long	tx_fifo_errors;
-	unsigned long	tx_heartbeat_errors;
-	unsigned long	tx_window_errors;
-	unsigned long	rx_compressed;
-	unsigned long	tx_compressed;
+	NET_DEV_STAT(rx_packets);
+	NET_DEV_STAT(tx_packets);
+	NET_DEV_STAT(rx_bytes);
+	NET_DEV_STAT(tx_bytes);
+	NET_DEV_STAT(rx_errors);
+	NET_DEV_STAT(tx_errors);
+	NET_DEV_STAT(rx_dropped);
+	NET_DEV_STAT(tx_dropped);
+	NET_DEV_STAT(multicast);
+	NET_DEV_STAT(collisions);
+	NET_DEV_STAT(rx_length_errors);
+	NET_DEV_STAT(rx_over_errors);
+	NET_DEV_STAT(rx_crc_errors);
+	NET_DEV_STAT(rx_frame_errors);
+	NET_DEV_STAT(rx_fifo_errors);
+	NET_DEV_STAT(rx_missed_errors);
+	NET_DEV_STAT(tx_aborted_errors);
+	NET_DEV_STAT(tx_carrier_errors);
+	NET_DEV_STAT(tx_fifo_errors);
+	NET_DEV_STAT(tx_heartbeat_errors);
+	NET_DEV_STAT(tx_window_errors);
+	NET_DEV_STAT(rx_compressed);
+	NET_DEV_STAT(tx_compressed);
 };
+#undef NET_DEV_STAT
 
 /* per-cpu stats, allocated on demand.
  * Try to fit them in a single cache line, for dev_get_stats() sake.
@@ -253,11 +260,17 @@ struct netdev_hw_addr_list {
 #define netdev_uc_empty(dev) netdev_hw_addr_list_empty(&(dev)->uc)
 #define netdev_for_each_uc_addr(ha, dev) \
 	netdev_hw_addr_list_for_each(ha, &(dev)->uc)
+#define netdev_for_each_synced_uc_addr(_ha, _dev) \
+	netdev_for_each_uc_addr((_ha), (_dev)) \
+		if ((_ha)->sync_cnt)
 
 #define netdev_mc_count(dev) netdev_hw_addr_list_count(&(dev)->mc)
 #define netdev_mc_empty(dev) netdev_hw_addr_list_empty(&(dev)->mc)
 #define netdev_for_each_mc_addr(ha, dev) \
 	netdev_hw_addr_list_for_each(ha, &(dev)->mc)
+#define netdev_for_each_synced_mc_addr(_ha, _dev) \
+	netdev_for_each_mc_addr((_ha), (_dev)) \
+		if ((_ha)->sync_cnt)
 
 struct hh_cache {
 	unsigned int	hh_len;
@@ -546,8 +559,8 @@ static inline bool napi_if_scheduled_mark_missed(struct napi_struct *n)
 {
 	unsigned long val, new;
 
+	val = READ_ONCE(n->state);
 	do {
-		val = READ_ONCE(n->state);
 		if (val & NAPIF_STATE_DISABLE)
 			return true;
 
@@ -555,7 +568,7 @@ static inline bool napi_if_scheduled_mark_missed(struct napi_struct *n)
 			return false;
 
 		new = val | NAPIF_STATE_MISSED;
-	} while (cmpxchg(&n->state, val, new) != val);
+	} while (!try_cmpxchg(&n->state, &val, new));
 
 	return true;
 }
@@ -934,6 +947,7 @@ struct net_device_path_ctx {
 };
 
 enum tc_setup_type {
+	TC_QUERY_CAPS,
 	TC_SETUP_QDISC_MQPRIO,
 	TC_SETUP_CLSU32,
 	TC_SETUP_CLSFLOWER,
@@ -1851,7 +1865,6 @@ enum netdev_ml_priv_type {
  *	@tipc_ptr:	TIPC specific data
  *	@atalk_ptr:	AppleTalk link
  *	@ip_ptr:	IPv4 specific data
- *	@dn_ptr:	DECnet specific data
  *	@ip6_ptr:	IPv6 specific data
  *	@ax25_ptr:	AX.25 specific data
  *	@ieee80211_ptr:	IEEE 802.11 specific data, assign before registering
@@ -2146,9 +2159,6 @@ struct net_device {
 #endif
 #if IS_ENABLED(CONFIG_ATALK)
 	void 			*atalk_ptr;
-#endif
-#if IS_ENABLED(CONFIG_DECNET)
-	struct dn_dev __rcu     *dn_ptr;
 #endif
 #if IS_ENABLED(CONFIG_AX25)
 	void			*ax25_ptr;
@@ -2551,16 +2561,15 @@ void netif_napi_add_weight(struct net_device *dev, struct napi_struct *napi,
  * @dev:  network device
  * @napi: NAPI context
  * @poll: polling function
- * @weight: default weight
  *
  * netif_napi_add() must be used to initialize a NAPI context prior to calling
  * *any* of the other NAPI-related functions.
  */
 static inline void
 netif_napi_add(struct net_device *dev, struct napi_struct *napi,
-	       int (*poll)(struct napi_struct *, int), int weight)
+	       int (*poll)(struct napi_struct *, int))
 {
-	netif_napi_add_weight(dev, napi, poll, weight);
+	netif_napi_add_weight(dev, napi, poll, NAPI_POLL_WEIGHT);
 }
 
 static inline void
@@ -2572,8 +2581,6 @@ netif_napi_add_tx_weight(struct net_device *dev,
 	set_bit(NAPI_STATE_NO_BUSY_POLL, &napi->state);
 	netif_napi_add_weight(dev, napi, poll, weight);
 }
-
-#define netif_tx_napi_add netif_napi_add_tx_weight
 
 /**
  * netif_napi_add_tx() - initialize a NAPI context to be used for Tx only
@@ -3357,6 +3364,16 @@ static inline void netdev_txq_bql_complete_prefetchw(struct netdev_queue *dev_qu
 #endif
 }
 
+/**
+ *	netdev_tx_sent_queue - report the number of bytes queued to a given tx queue
+ *	@dev_queue: network device queue
+ *	@bytes: number of bytes queued to the device queue
+ *
+ *	Report the number of bytes queued for sending/completion to the network
+ *	device hardware queue. @bytes should be a good approximation and should
+ *	exactly match netdev_completed_queue() @bytes.
+ *	This is typically called once per packet, from ndo_start_xmit().
+ */
 static inline void netdev_tx_sent_queue(struct netdev_queue *dev_queue,
 					unsigned int bytes)
 {
@@ -3402,13 +3419,14 @@ static inline bool __netdev_tx_sent_queue(struct netdev_queue *dev_queue,
 }
 
 /**
- * 	netdev_sent_queue - report the number of bytes queued to hardware
- * 	@dev: network device
- * 	@bytes: number of bytes queued to the hardware device queue
+ *	netdev_sent_queue - report the number of bytes queued to hardware
+ *	@dev: network device
+ *	@bytes: number of bytes queued to the hardware device queue
  *
- * 	Report the number of bytes queued for sending/completion to the network
- * 	device hardware queue. @bytes should be a good approximation and should
- * 	exactly match netdev_completed_queue() @bytes
+ *	Report the number of bytes queued for sending/completion to the network
+ *	device hardware queue#0. @bytes should be a good approximation and should
+ *	exactly match netdev_completed_queue() @bytes.
+ *	This is typically called once per packet, from ndo_start_xmit().
  */
 static inline void netdev_sent_queue(struct net_device *dev, unsigned int bytes)
 {
@@ -3423,6 +3441,15 @@ static inline bool __netdev_sent_queue(struct net_device *dev,
 				      xmit_more);
 }
 
+/**
+ *	netdev_tx_completed_queue - report number of packets/bytes at TX completion.
+ *	@dev_queue: network device queue
+ *	@pkts: number of packets (currently ignored)
+ *	@bytes: number of bytes dequeued from the device queue
+ *
+ *	Must be called at most once per TX completion round (and not per
+ *	individual packet), so that BQL can adjust its limits appropriately.
+ */
 static inline void netdev_tx_completed_queue(struct netdev_queue *dev_queue,
 					     unsigned int pkts, unsigned int bytes)
 {
@@ -3802,6 +3829,7 @@ void netif_receive_skb_list(struct list_head *head);
 gro_result_t napi_gro_receive(struct napi_struct *napi, struct sk_buff *skb);
 void napi_gro_flush(struct napi_struct *napi, bool flush_old);
 struct sk_buff *napi_get_frags(struct napi_struct *napi);
+void napi_get_frags_check(struct napi_struct *napi);
 gro_result_t napi_gro_frags(struct napi_struct *napi);
 struct packet_offload *gro_find_receive_by_type(__be16 type);
 struct packet_offload *gro_find_complete_by_type(__be16 type);
@@ -5142,5 +5170,10 @@ extern struct list_head ptype_all __read_mostly;
 extern struct list_head ptype_base[PTYPE_HASH_SIZE] __read_mostly;
 
 extern struct net_device *blackhole_netdev;
+
+/* Note: Avoid these macros in fast path, prefer per-cpu or per-queue counters. */
+#define DEV_STATS_INC(DEV, FIELD) atomic_long_inc(&(DEV)->stats.__##FIELD)
+#define DEV_STATS_ADD(DEV, FIELD, VAL) 	\
+		atomic_long_add((VAL), &(DEV)->stats.__##FIELD)
 
 #endif	/* _LINUX_NETDEVICE_H */

@@ -102,14 +102,14 @@ static void cedrus_h265_frame_info_write_single(struct cedrus_ctx *ctx,
 						unsigned int index,
 						bool field_pic,
 						u32 pic_order_cnt[],
-						int buffer_index)
+						struct vb2_buffer *buf)
 {
 	struct cedrus_dev *dev = ctx->dev;
-	dma_addr_t dst_luma_addr = cedrus_dst_buf_addr(ctx, buffer_index, 0);
-	dma_addr_t dst_chroma_addr = cedrus_dst_buf_addr(ctx, buffer_index, 1);
+	dma_addr_t dst_luma_addr = cedrus_dst_buf_addr(ctx, buf, 0);
+	dma_addr_t dst_chroma_addr = cedrus_dst_buf_addr(ctx, buf, 1);
 	dma_addr_t mv_col_buf_addr[2] = {
-		cedrus_h265_frame_info_mv_col_buf_addr(ctx, buffer_index, 0),
-		cedrus_h265_frame_info_mv_col_buf_addr(ctx, buffer_index,
+		cedrus_h265_frame_info_mv_col_buf_addr(ctx, buf->index, 0),
+		cedrus_h265_frame_info_mv_col_buf_addr(ctx, buf->index,
 						       field_pic ? 1 : 0)
 	};
 	u32 offset = VE_DEC_H265_SRAM_OFFSET_FRAME_INFO +
@@ -141,18 +141,18 @@ static void cedrus_h265_frame_info_write_dpb(struct cedrus_ctx *ctx,
 	unsigned int i;
 
 	for (i = 0; i < num_active_dpb_entries; i++) {
-		int buffer_index = vb2_find_timestamp(vq, dpb[i].timestamp, 0);
+		struct vb2_buffer *buf = vb2_find_buffer(vq, dpb[i].timestamp);
 		u32 pic_order_cnt[2] = {
 			dpb[i].pic_order_cnt_val,
 			dpb[i].pic_order_cnt_val
 		};
 
-		if (buffer_index < 0)
+		if (!buf)
 			continue;
 
 		cedrus_h265_frame_info_write_single(ctx, i, dpb[i].field_pic,
 						    pic_order_cnt,
-						    buffer_index);
+						    buf);
 	}
 }
 
@@ -240,6 +240,18 @@ static void cedrus_h265_skip_bits(struct cedrus_dev *dev, int num)
 
 		count += tmp;
 	}
+}
+
+static u32 cedrus_h265_show_bits(struct cedrus_dev *dev, int num)
+{
+	cedrus_write(dev, VE_DEC_H265_TRIGGER,
+		     VE_DEC_H265_TRIGGER_SHOW_BITS |
+		     VE_DEC_H265_TRIGGER_TYPE_N_BITS(num));
+
+	cedrus_wait_for(dev, VE_DEC_H265_STATUS,
+			VE_DEC_H265_STATUS_VLD_BUSY);
+
+	return cedrus_read(dev, VE_DEC_H265_BITS_READ);
 }
 
 static void cedrus_h265_write_scaling_list(struct cedrus_ctx *ctx,
@@ -406,7 +418,7 @@ static int cedrus_h265_setup(struct cedrus_ctx *ctx, struct cedrus_run *run)
 	u32 num_entry_point_offsets;
 	u32 output_pic_list_index;
 	u32 pic_order_cnt[2];
-	u8 *padding;
+	u8 padding;
 	int count;
 	u32 reg;
 
@@ -520,21 +532,22 @@ static int cedrus_h265_setup(struct cedrus_ctx *ctx, struct cedrus_run *run)
 	if (slice_params->data_byte_offset == 0)
 		return -EOPNOTSUPP;
 
-	padding = (u8 *)vb2_plane_vaddr(&run->src->vb2_buf, 0) +
-		slice_params->data_byte_offset - 1;
+	cedrus_h265_skip_bits(dev, (slice_params->data_byte_offset - 1) * 8);
+
+	padding = cedrus_h265_show_bits(dev, 8);
 
 	/* at least one bit must be set in that byte */
-	if (*padding == 0)
+	if (padding == 0)
 		return -EINVAL;
 
 	for (count = 0; count < 8; count++)
-		if (*padding & (1 << count))
+		if (padding & (1 << count))
 			break;
 
 	/* Include the one bit. */
 	count++;
 
-	cedrus_h265_skip_bits(dev, slice_params->data_byte_offset * 8 - count);
+	cedrus_h265_skip_bits(dev, 8 - count);
 
 	/* Bitstream parameters. */
 
@@ -752,7 +765,7 @@ static int cedrus_h265_setup(struct cedrus_ctx *ctx, struct cedrus_run *run)
 	cedrus_h265_frame_info_write_single(ctx, output_pic_list_index,
 					    slice_params->pic_struct != 0,
 					    pic_order_cnt,
-					    run->dst->vb2_buf.index);
+					    &run->dst->vb2_buf);
 
 	cedrus_write(dev, VE_DEC_H265_OUTPUT_FRAME_IDX, output_pic_list_index);
 

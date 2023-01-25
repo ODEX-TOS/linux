@@ -952,14 +952,14 @@ static void xgbe_napi_enable(struct xgbe_prv_data *pdata, unsigned int add)
 			channel = pdata->channel[i];
 			if (add)
 				netif_napi_add(pdata->netdev, &channel->napi,
-					       xgbe_one_poll, NAPI_POLL_WEIGHT);
+					       xgbe_one_poll);
 
 			napi_enable(&channel->napi);
 		}
 	} else {
 		if (add)
 			netif_napi_add(pdata->netdev, &pdata->napi,
-				       xgbe_all_poll, NAPI_POLL_WEIGHT);
+				       xgbe_all_poll);
 
 		napi_enable(&pdata->napi);
 	}
@@ -1063,6 +1063,9 @@ static void xgbe_free_irqs(struct xgbe_prv_data *pdata)
 	unsigned int i;
 
 	devm_free_irq(pdata->dev, pdata->dev_irq, pdata);
+
+	tasklet_kill(&pdata->tasklet_dev);
+	tasklet_kill(&pdata->tasklet_ecc);
 
 	if (pdata->vdata->ecc_support && (pdata->dev_irq != pdata->ecc_irq))
 		devm_free_irq(pdata->dev, pdata->ecc_irq, pdata);

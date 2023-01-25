@@ -332,7 +332,7 @@ tcindex_set_parms(struct net *net, struct tcf_proto *tp, unsigned long base,
 		  struct tcindex_filter_result *r, struct nlattr **tb,
 		  struct nlattr *est, u32 flags, struct netlink_ext_ack *extack)
 {
-	struct tcindex_filter_result new_filter_result, *old_r = r;
+	struct tcindex_filter_result new_filter_result;
 	struct tcindex_data *cp = NULL, *oldp;
 	struct tcindex_filter *f = NULL; /* make gcc behave */
 	struct tcf_result cr = {};
@@ -401,7 +401,7 @@ tcindex_set_parms(struct net *net, struct tcf_proto *tp, unsigned long base,
 	err = tcindex_filter_result_init(&new_filter_result, cp, net);
 	if (err < 0)
 		goto errout_alloc;
-	if (old_r)
+	if (r)
 		cr = r->res;
 
 	err = -EBUSY;
@@ -476,14 +476,6 @@ tcindex_set_parms(struct net *net, struct tcf_proto *tp, unsigned long base,
 	if (tb[TCA_TCINDEX_CLASSID]) {
 		cr.classid = nla_get_u32(tb[TCA_TCINDEX_CLASSID]);
 		tcf_bind_filter(tp, &cr, base);
-	}
-
-	if (old_r && old_r != r) {
-		err = tcindex_filter_result_init(old_r, cp, net);
-		if (err < 0) {
-			kfree(f);
-			goto errout_alloc;
-		}
 	}
 
 	oldp = p;
@@ -566,13 +558,8 @@ static void tcindex_walk(struct tcf_proto *tp, struct tcf_walker *walker,
 		for (i = 0; i < p->hash; i++) {
 			if (!p->perfect[i].res.class)
 				continue;
-			if (walker->count >= walker->skip) {
-				if (walker->fn(tp, p->perfect + i, walker) < 0) {
-					walker->stop = 1;
-					return;
-				}
-			}
-			walker->count++;
+			if (!tc_cls_stats_dump(tp, walker, p->perfect + i))
+				return;
 		}
 	}
 	if (!p->h)
@@ -580,13 +567,8 @@ static void tcindex_walk(struct tcf_proto *tp, struct tcf_walker *walker,
 	for (i = 0; i < p->hash; i++) {
 		for (f = rtnl_dereference(p->h[i]); f; f = next) {
 			next = rtnl_dereference(f->next);
-			if (walker->count >= walker->skip) {
-				if (walker->fn(tp, &f->result, walker) < 0) {
-					walker->stop = 1;
-					return;
-				}
-			}
-			walker->count++;
+			if (!tc_cls_stats_dump(tp, walker, &f->result))
+				return;
 		}
 	}
 }
@@ -701,12 +683,7 @@ static void tcindex_bind_class(void *fh, u32 classid, unsigned long cl,
 {
 	struct tcindex_filter_result *r = fh;
 
-	if (r && r->res.classid == classid) {
-		if (cl)
-			__tcf_bind_filter(q, &r->res, base);
-		else
-			__tcf_unbind_filter(q, &r->res);
-	}
+	tc_cls_bind_class(classid, cl, q, &r->res, base);
 }
 
 static struct tcf_proto_ops cls_tcindex_ops __read_mostly = {

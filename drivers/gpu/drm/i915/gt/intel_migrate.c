@@ -341,6 +341,16 @@ static int emit_no_arbitration(struct i915_request *rq)
 	return 0;
 }
 
+static int max_pte_pkt_size(struct i915_request *rq, int pkt)
+{
+	struct intel_ring *ring = rq->ring;
+
+	pkt = min_t(int, pkt, (ring->space - rq->reserved_space) / sizeof(u32) + 5);
+	pkt = min_t(int, pkt, (ring->size - ring->emit) / sizeof(u32) + 5);
+
+	return pkt;
+}
+
 static int emit_pte(struct i915_request *rq,
 		    struct sgt_dma *it,
 		    enum i915_cache_level cache_level,
@@ -387,8 +397,7 @@ static int emit_pte(struct i915_request *rq,
 		return PTR_ERR(cs);
 
 	/* Pack as many PTE updates as possible into a single MI command */
-	pkt = min_t(int, dword_length, ring->space / sizeof(u32) + 5);
-	pkt = min_t(int, pkt, (ring->size - ring->emit) / sizeof(u32) + 5);
+	pkt = max_pte_pkt_size(rq, dword_length);
 
 	hdr = cs;
 	*cs++ = MI_STORE_DATA_IMM | REG_BIT(21); /* as qword elements */
@@ -421,8 +430,7 @@ static int emit_pte(struct i915_request *rq,
 				}
 			}
 
-			pkt = min_t(int, dword_rem, ring->space / sizeof(u32) + 5);
-			pkt = min_t(int, pkt, (ring->size - ring->emit) / sizeof(u32) + 5);
+			pkt = max_pte_pkt_size(rq, dword_rem);
 
 			hdr = cs;
 			*cs++ = MI_STORE_DATA_IMM | REG_BIT(21);
@@ -511,44 +519,16 @@ static inline u32 *i915_flush_dw(u32 *cmd, u32 flags)
 	return cmd;
 }
 
-static u32 calc_ctrl_surf_instr_size(struct drm_i915_private *i915, int size)
-{
-	u32 num_cmds, num_blks, total_size;
-
-	if (!GET_CCS_BYTES(i915, size))
-		return 0;
-
-	/*
-	 * XY_CTRL_SURF_COPY_BLT transfers CCS in 256 byte
-	 * blocks. one XY_CTRL_SURF_COPY_BLT command can
-	 * transfer upto 1024 blocks.
-	 */
-	num_blks = DIV_ROUND_UP(GET_CCS_BYTES(i915, size),
-				NUM_CCS_BYTES_PER_BLOCK);
-	num_cmds = DIV_ROUND_UP(num_blks, NUM_CCS_BLKS_PER_XFER);
-	total_size = XY_CTRL_SURF_INSTR_SIZE * num_cmds;
-
-	/*
-	 * Adding a flush before and after XY_CTRL_SURF_COPY_BLT
-	 */
-	total_size += 2 * MI_FLUSH_DW_SIZE;
-
-	return total_size;
-}
-
 static int emit_copy_ccs(struct i915_request *rq,
 			 u32 dst_offset, u8 dst_access,
 			 u32 src_offset, u8 src_access, int size)
 {
 	struct drm_i915_private *i915 = rq->engine->i915;
 	int mocs = rq->engine->gt->mocs.uc_index << 1;
-	u32 num_ccs_blks, ccs_ring_size;
+	u32 num_ccs_blks;
 	u32 *cs;
 
-	ccs_ring_size = calc_ctrl_surf_instr_size(i915, size);
-	WARN_ON(!ccs_ring_size);
-
-	cs = intel_ring_begin(rq, round_up(ccs_ring_size, 2));
+	cs = intel_ring_begin(rq, 12);
 	if (IS_ERR(cs))
 		return PTR_ERR(cs);
 
@@ -583,8 +563,7 @@ static int emit_copy_ccs(struct i915_request *rq,
 		FIELD_PREP(XY_CTRL_SURF_MOCS_MASK, mocs);
 
 	cs = i915_flush_dw(cs, MI_FLUSH_DW_LLC | MI_FLUSH_DW_CCS);
-	if (ccs_ring_size & 1)
-		*cs++ = MI_NOOP;
+	*cs++ = MI_NOOP;
 
 	intel_ring_advance(rq, cs);
 
@@ -645,7 +624,7 @@ static u64 scatter_list_length(struct scatterlist *sg)
 	while (sg && sg_dma_len(sg)) {
 		len += sg_dma_len(sg);
 		sg = sg_next(sg);
-	};
+	}
 
 	return len;
 }

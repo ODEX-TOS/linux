@@ -1618,7 +1618,7 @@ static void imx_uart_flush_buffer(struct uart_port *port)
 
 static void
 imx_uart_set_termios(struct uart_port *port, struct ktermios *termios,
-		     struct ktermios *old)
+		     const struct ktermios *old)
 {
 	struct imx_port *sport = (struct imx_port *)port;
 	unsigned long flags;
@@ -2594,6 +2594,7 @@ static const struct dev_pm_ops imx_uart_pm_ops = {
 	.suspend_noirq = imx_uart_suspend_noirq,
 	.resume_noirq = imx_uart_resume_noirq,
 	.freeze_noirq = imx_uart_suspend_noirq,
+	.thaw_noirq = imx_uart_resume_noirq,
 	.restore_noirq = imx_uart_resume_noirq,
 	.suspend = imx_uart_suspend,
 	.resume = imx_uart_resume,

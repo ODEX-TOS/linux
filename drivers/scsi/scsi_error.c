@@ -334,6 +334,7 @@ enum blk_eh_timer_return scsi_timeout(struct request *req)
 	trace_scsi_dispatch_cmd_timeout(scmd);
 	scsi_log_completion(scmd, TIMEOUT_ERROR);
 
+	atomic_inc(&scmd->device->iotmo_cnt);
 	if (host->eh_deadline != -1 && !host->last_reset)
 		host->last_reset = jiffies;
 
@@ -342,19 +343,11 @@ enum blk_eh_timer_return scsi_timeout(struct request *req)
 
 	if (rtn == BLK_EH_DONE) {
 		/*
-		 * Set the command to complete first in order to prevent a real
-		 * completion from releasing the command while error handling
-		 * is using it. If the command was already completed, then the
-		 * lower level driver beat the timeout handler, and it is safe
-		 * to return without escalating error recovery.
-		 *
-		 * If timeout handling lost the race to a real completion, the
-		 * block layer may ignore that due to a fake timeout injection,
-		 * so return RESET_TIMER to allow error handling another shot
-		 * at this command.
+		 * If scsi_done() has already set SCMD_STATE_COMPLETE, do not
+		 * modify *scmd.
 		 */
 		if (test_and_set_bit(SCMD_STATE_COMPLETE, &scmd->state))
-			return BLK_EH_RESET_TIMER;
+			return BLK_EH_DONE;
 		if (scsi_abort_command(scmd) != SUCCESS) {
 			set_host_byte(scmd, DID_TIME_OUT);
 			scsi_eh_scmd_add(scmd);
@@ -514,6 +507,11 @@ static void scsi_report_sense(struct scsi_device *sdev,
 	}
 }
 
+static inline void set_scsi_ml_byte(struct scsi_cmnd *cmd, u8 status)
+{
+	cmd->result = (cmd->result & 0xffff00ff) | (status << 8);
+}
+
 /**
  * scsi_check_sense - Examine scsi cmd sense
  * @scmd:	Cmd to have sense checked.
@@ -644,7 +642,7 @@ enum scsi_disposition scsi_check_sense(struct scsi_cmnd *scmd)
 	case DATA_PROTECT:
 		if (sshdr.asc == 0x27 && sshdr.ascq == 0x07) {
 			/* Thin provisioning hard threshold reached */
-			set_host_byte(scmd, DID_ALLOC_FAILURE);
+			set_scsi_ml_byte(scmd, SCSIML_STAT_NOSPC);
 			return SUCCESS;
 		}
 		fallthrough;
@@ -652,14 +650,14 @@ enum scsi_disposition scsi_check_sense(struct scsi_cmnd *scmd)
 	case VOLUME_OVERFLOW:
 	case MISCOMPARE:
 	case BLANK_CHECK:
-		set_host_byte(scmd, DID_TARGET_FAILURE);
+		set_scsi_ml_byte(scmd, SCSIML_STAT_TGT_FAILURE);
 		return SUCCESS;
 
 	case MEDIUM_ERROR:
 		if (sshdr.asc == 0x11 || /* UNRECOVERED READ ERR */
 		    sshdr.asc == 0x13 || /* AMNF DATA FIELD */
 		    sshdr.asc == 0x14) { /* RECORD NOT FOUND */
-			set_host_byte(scmd, DID_MEDIUM_ERROR);
+			set_scsi_ml_byte(scmd, SCSIML_STAT_MED_ERROR);
 			return SUCCESS;
 		}
 		return NEEDS_RETRY;
@@ -668,7 +666,7 @@ enum scsi_disposition scsi_check_sense(struct scsi_cmnd *scmd)
 		if (scmd->device->retry_hwerror)
 			return ADD_TO_MLQUEUE;
 		else
-			set_host_byte(scmd, DID_TARGET_FAILURE);
+			set_scsi_ml_byte(scmd, SCSIML_STAT_TGT_FAILURE);
 		fallthrough;
 
 	case ILLEGAL_REQUEST:
@@ -678,7 +676,7 @@ enum scsi_disposition scsi_check_sense(struct scsi_cmnd *scmd)
 		    sshdr.asc == 0x24 || /* Invalid field in cdb */
 		    sshdr.asc == 0x26 || /* Parameter value invalid */
 		    sshdr.asc == 0x27) { /* Write protected */
-			set_host_byte(scmd, DID_TARGET_FAILURE);
+			set_scsi_ml_byte(scmd, SCSIML_STAT_TGT_FAILURE);
 		}
 		return SUCCESS;
 
@@ -1983,7 +1981,7 @@ enum scsi_disposition scsi_decide_disposition(struct scsi_cmnd *scmd)
 	case SAM_STAT_RESERVATION_CONFLICT:
 		sdev_printk(KERN_INFO, scmd->device,
 			    "reservation conflict\n");
-		set_host_byte(scmd, DID_NEXUS_FAILURE);
+		set_scsi_ml_byte(scmd, SCSIML_STAT_RESV_CONFLICT);
 		return SUCCESS; /* causes immediate i/o error */
 	}
 	return FAILED;
@@ -2004,9 +2002,11 @@ maybe_retry:
 	}
 }
 
-static void eh_lock_door_done(struct request *req, blk_status_t status)
+static enum rq_end_io_ret eh_lock_door_done(struct request *req,
+					    blk_status_t status)
 {
 	blk_mq_free_request(req);
+	return RQ_END_IO_NONE;
 }
 
 /**

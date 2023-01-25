@@ -560,7 +560,7 @@ static int wnd_rescan(struct wnd_bitmap *wnd)
 
 		buf = (ulong *)bh->b_data;
 
-		used = __bitmap_weight(buf, wbits);
+		used = bitmap_weight(buf, wbits);
 		if (used < wbits) {
 			frb = wbits - used;
 			wnd->free_bits[iw] = frb;
@@ -661,7 +661,7 @@ int wnd_init(struct wnd_bitmap *wnd, struct super_block *sb, size_t nbits)
 	if (!wnd->bits_last)
 		wnd->bits_last = wbits;
 
-	wnd->free_bits = kcalloc(wnd->nwnd, sizeof(u16), GFP_NOFS);
+	wnd->free_bits = kcalloc(wnd->nwnd, sizeof(u16), GFP_NOFS | __GFP_NOWARN);
 	if (!wnd->free_bits)
 		return -ENOMEM;
 
@@ -1364,7 +1364,7 @@ int wnd_extend(struct wnd_bitmap *wnd, size_t new_bits)
 		buf = (ulong *)bh->b_data;
 
 		__bitmap_clear(buf, b0, blocksize * 8 - b0);
-		frb = wbits - __bitmap_weight(buf, wbits);
+		frb = wbits - bitmap_weight(buf, wbits);
 		wnd->total_zeroes += frb - wnd->free_bits[iw];
 		wnd->free_bits[iw] = frb;
 
@@ -1424,7 +1424,7 @@ int ntfs_trim_fs(struct ntfs_sb_info *sbi, struct fstrim_range *range)
 
 	down_read_nested(&wnd->rw_lock, BITMAP_MUTEX_CLUSTERS);
 
-	for (; iw < wnd->nbits; iw++, wbit = 0) {
+	for (; iw < wnd->nwnd; iw++, wbit = 0) {
 		CLST lcn_wnd = iw * wbits;
 		struct buffer_head *bh;
 

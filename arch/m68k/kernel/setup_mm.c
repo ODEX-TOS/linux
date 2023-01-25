@@ -25,6 +25,7 @@
 #include <linux/module.h>
 #include <linux/nvram.h>
 #include <linux/initrd.h>
+#include <linux/random.h>
 
 #include <asm/bootinfo.h>
 #include <asm/byteorder.h>
@@ -147,9 +148,20 @@ static void __init m68k_parse_bootinfo(const struct bi_record *record)
 			break;
 
 		case BI_COMMAND_LINE:
-			strlcpy(m68k_command_line, data,
+			strscpy(m68k_command_line, data,
 				sizeof(m68k_command_line));
 			break;
+
+		case BI_RNG_SEED: {
+			u16 len = be16_to_cpup(data);
+			add_bootloader_randomness(data + 2, len);
+			/*
+			 * Zero the data to preserve forward secrecy, and zero the
+			 * length to prevent kexec from using it.
+			 */
+			memzero_explicit((void *)data, len + 2);
+			break;
+		}
 
 		default:
 			if (MACH_IS_AMIGA)

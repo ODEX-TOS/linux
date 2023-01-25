@@ -32,7 +32,7 @@ properties:
       - description: Display byte clock
       - description: Display byte interface clock
       - description: Display pixel clock
-      - description: Display escape clock
+      - description: Display core clock
       - description: Display AHB clock
       - description: Display AXI clock
 
@@ -66,13 +66,11 @@ properties:
       2 DSI links.
 
   assigned-clocks:
-    minItems: 2
     maxItems: 2
     description: |
       Parents of "byte" and "pixel" for the given platform.
 
   assigned-clock-parents:
-    minItems: 2
     maxItems: 2
     description: |
       The Byte clock and Pixel clock PLL outputs provided by a DSI PHY block.
@@ -136,8 +134,6 @@ required:
   - phy-names
   - assigned-clocks
   - assigned-clock-parents
-  - power-domains
-  - operating-points-v2
   - ports
 
 additionalProperties: false

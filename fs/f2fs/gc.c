@@ -74,7 +74,8 @@ static int gc_thread_func(void *data)
 
 		if (time_to_inject(sbi, FAULT_CHECKPOINT)) {
 			f2fs_show_injection_info(sbi, FAULT_CHECKPOINT);
-			f2fs_stop_checkpoint(sbi, false);
+			f2fs_stop_checkpoint(sbi, false,
+					STOP_CP_REASON_FAULT_INJECT);
 		}
 
 		if (!sb_start_write_trylock(sbi->sb)) {
@@ -95,16 +96,6 @@ static int gc_thread_func(void *data)
 		 * invalidated soon after by user update or deletion.
 		 * So, I'd like to wait some time to collect dirty segments.
 		 */
-		if (sbi->gc_mode == GC_URGENT_HIGH) {
-			spin_lock(&sbi->gc_urgent_high_lock);
-			if (sbi->gc_urgent_high_limited &&
-					!sbi->gc_urgent_high_remaining--) {
-				sbi->gc_urgent_high_limited = false;
-				sbi->gc_mode = GC_NORMAL;
-			}
-			spin_unlock(&sbi->gc_urgent_high_lock);
-		}
-
 		if (sbi->gc_mode == GC_URGENT_HIGH ||
 				sbi->gc_mode == GC_URGENT_MID) {
 			wait_ms = gc_th->urgent_sleep_time;
@@ -161,6 +152,15 @@ do_gc:
 		/* balancing f2fs's metadata periodically */
 		f2fs_balance_fs_bg(sbi, true);
 next:
+		if (sbi->gc_mode == GC_URGENT_HIGH) {
+			spin_lock(&sbi->gc_urgent_high_lock);
+			if (sbi->gc_urgent_high_remaining) {
+				sbi->gc_urgent_high_remaining--;
+				if (!sbi->gc_urgent_high_remaining)
+					sbi->gc_mode = GC_NORMAL;
+			}
+			spin_unlock(&sbi->gc_urgent_high_lock);
+		}
 		sb_end_write(sbi->sb);
 
 	} while (!kthread_should_stop());
@@ -281,7 +281,7 @@ static void select_policy(struct f2fs_sb_info *sbi, int gc_type,
 
 	/* let's select beginning hot/small space first in no_heap mode*/
 	if (f2fs_need_rand_seg(sbi))
-		p->offset = prandom_u32() % (MAIN_SECS(sbi) * sbi->segs_per_sec);
+		p->offset = prandom_u32_max(MAIN_SECS(sbi) * sbi->segs_per_sec);
 	else if (test_opt(sbi, NOHEAP) &&
 		(type == CURSEG_HOT_DATA || IS_NODESEG(type)))
 		p->offset = 0;
@@ -1109,6 +1109,7 @@ static bool is_alive(struct f2fs_sb_info *sbi, struct f2fs_summary *sum,
 	if (ofs_in_node >= max_addrs) {
 		f2fs_err(sbi, "Inconsistent ofs_in_node:%u in summary, ino:%u, nid:%u, max:%u",
 			ofs_in_node, dni->ino, dni->nid, max_addrs);
+		f2fs_put_page(node_page, 1);
 		return false;
 	}
 
@@ -1163,6 +1164,7 @@ static int ra_data_block(struct inode *inode, pgoff_t index)
 		if (unlikely(!f2fs_is_valid_blkaddr(sbi, dn.data_blkaddr,
 						DATA_GENERIC_ENHANCE_READ))) {
 			err = -EFSCORRUPTED;
+			f2fs_handle_error(sbi, ERROR_INVALID_BLKADDR);
 			goto put_page;
 		}
 		goto got_it;
@@ -1181,6 +1183,7 @@ static int ra_data_block(struct inode *inode, pgoff_t index)
 	if (unlikely(!f2fs_is_valid_blkaddr(sbi, dn.data_blkaddr,
 						DATA_GENERIC_ENHANCE))) {
 		err = -EFSCORRUPTED;
+		f2fs_handle_error(sbi, ERROR_INVALID_BLKADDR);
 		goto put_page;
 	}
 got_it:
@@ -1210,8 +1213,8 @@ got_it:
 	f2fs_put_page(fio.encrypted_page, 0);
 	f2fs_put_page(page, 1);
 
-	f2fs_update_iostat(sbi, FS_DATA_READ_IO, F2FS_BLKSIZE);
-	f2fs_update_iostat(sbi, FS_GDATA_READ_IO, F2FS_BLKSIZE);
+	f2fs_update_iostat(sbi, inode, FS_DATA_READ_IO, F2FS_BLKSIZE);
+	f2fs_update_iostat(sbi, NULL, FS_GDATA_READ_IO, F2FS_BLKSIZE);
 
 	return 0;
 put_encrypted_page:
@@ -1311,8 +1314,10 @@ static int move_data_block(struct inode *inode, block_t bidx,
 			goto up_out;
 		}
 
-		f2fs_update_iostat(fio.sbi, FS_DATA_READ_IO, F2FS_BLKSIZE);
-		f2fs_update_iostat(fio.sbi, FS_GDATA_READ_IO, F2FS_BLKSIZE);
+		f2fs_update_iostat(fio.sbi, inode, FS_DATA_READ_IO,
+							F2FS_BLKSIZE);
+		f2fs_update_iostat(fio.sbi, NULL, FS_GDATA_READ_IO,
+							F2FS_BLKSIZE);
 
 		lock_page(mpage);
 		if (unlikely(mpage->mapping != META_MAPPING(fio.sbi) ||
@@ -1364,7 +1369,7 @@ static int move_data_block(struct inode *inode, block_t bidx,
 		goto put_page_out;
 	}
 
-	f2fs_update_iostat(fio.sbi, FS_GC_DATA_IO, F2FS_BLKSIZE);
+	f2fs_update_iostat(fio.sbi, NULL, FS_GC_DATA_IO, F2FS_BLKSIZE);
 
 	f2fs_update_data_blkaddr(&dn, newaddr);
 	set_inode_flag(inode, FI_APPEND_WRITE);
@@ -1710,7 +1715,8 @@ static int do_garbage_collect(struct f2fs_sb_info *sbi,
 			f2fs_err(sbi, "Inconsistent segment (%u) type [%d, %d] in SSA and SIT",
 				 segno, type, GET_SUM_TYPE((&sum->footer)));
 			set_sbi_flag(sbi, SBI_NEED_FSCK);
-			f2fs_stop_checkpoint(sbi, false);
+			f2fs_stop_checkpoint(sbi, false,
+				STOP_CP_REASON_CORRUPTED_SUMMARY);
 			goto skip;
 		}
 
@@ -1738,8 +1744,9 @@ freed:
 				get_valid_blocks(sbi, segno, false) == 0)
 			seg_freed++;
 
-		if (__is_large_section(sbi) && segno + 1 < end_segno)
-			sbi->next_victim_seg[gc_type] = segno + 1;
+		if (__is_large_section(sbi))
+			sbi->next_victim_seg[gc_type] =
+				(segno + 1 < end_segno) ? segno + 1 : NULL_SEGNO;
 skip:
 		f2fs_put_page(sum_page, 0);
 	}
@@ -2127,8 +2134,6 @@ out_unlock:
 	if (err)
 		return err;
 
-	set_sbi_flag(sbi, SBI_IS_RESIZEFS);
-
 	freeze_super(sbi->sb);
 	f2fs_down_write(&sbi->gc_lock);
 	f2fs_down_write(&sbi->cp_global_sem);
@@ -2144,6 +2149,7 @@ out_unlock:
 	if (err)
 		goto out_err;
 
+	set_sbi_flag(sbi, SBI_IS_RESIZEFS);
 	err = free_segment_range(sbi, secs, false);
 	if (err)
 		goto recover_out;
@@ -2167,6 +2173,7 @@ out_unlock:
 		f2fs_commit_super(sbi, false);
 	}
 recover_out:
+	clear_sbi_flag(sbi, SBI_IS_RESIZEFS);
 	if (err) {
 		set_sbi_flag(sbi, SBI_NEED_FSCK);
 		f2fs_err(sbi, "resize_fs failed, should run fsck to repair!");
@@ -2179,6 +2186,5 @@ out_err:
 	f2fs_up_write(&sbi->cp_global_sem);
 	f2fs_up_write(&sbi->gc_lock);
 	thaw_super(sbi->sb);
-	clear_sbi_flag(sbi, SBI_IS_RESIZEFS);
 	return err;
 }

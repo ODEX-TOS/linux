@@ -160,7 +160,7 @@
 
 #define IMX7_CSI_VIDEO_NAME		"imx-capture"
 /* In bytes, per queue */
-#define IMX7_CSI_VIDEO_MEM_LIMIT	SZ_64M
+#define IMX7_CSI_VIDEO_MEM_LIMIT	SZ_512M
 #define IMX7_CSI_VIDEO_EOF_TIMEOUT	2000
 
 #define IMX7_CSI_DEF_MBUS_CODE		MEDIA_BUS_FMT_UYVY8_2X8
@@ -521,9 +521,9 @@ static void imx7_csi_configure(struct imx7_csi *csi)
 	cr18 = imx7_csi_reg_read(csi, CSI_CSICR18);
 
 	cr18 &= ~(BIT_CSI_HW_ENABLE | BIT_MIPI_DATA_FORMAT_MASK |
-		  BIT_DATA_FROM_MIPI | BIT_BASEADDR_CHG_ERR_EN |
-		  BIT_BASEADDR_SWITCH_EN | BIT_BASEADDR_SWITCH_SEL |
-		  BIT_DEINTERLACE_EN);
+		  BIT_DATA_FROM_MIPI | BIT_MIPI_DOUBLE_CMPNT |
+		  BIT_BASEADDR_CHG_ERR_EN | BIT_BASEADDR_SWITCH_SEL |
+		  BIT_BASEADDR_SWITCH_EN | BIT_DEINTERLACE_EN);
 
 	if (out_pix->field == V4L2_FIELD_INTERLACED) {
 		cr18 |= BIT_DEINTERLACE_EN;
@@ -1360,7 +1360,7 @@ static int imx7_csi_video_start_streaming(struct vb2_queue *vq,
 
 	mutex_lock(&csi->mdev.graph_mutex);
 
-	ret = __media_pipeline_start(&csi->sd.entity, &csi->pipe);
+	ret = __video_device_pipeline_start(csi->vdev, &csi->pipe);
 	if (ret)
 		goto err_unlock;
 
@@ -1373,7 +1373,7 @@ static int imx7_csi_video_start_streaming(struct vb2_queue *vq,
 	return 0;
 
 err_stop:
-	__media_pipeline_stop(&csi->sd.entity);
+	__video_device_pipeline_stop(csi->vdev);
 err_unlock:
 	mutex_unlock(&csi->mdev.graph_mutex);
 	dev_err(csi->dev, "pipeline start failed with %d\n", ret);
@@ -1396,7 +1396,7 @@ static void imx7_csi_video_stop_streaming(struct vb2_queue *vq)
 
 	mutex_lock(&csi->mdev.graph_mutex);
 	v4l2_subdev_call(&csi->sd, video, s_stream, 0);
-	__media_pipeline_stop(&csi->sd.entity);
+	__video_device_pipeline_stop(csi->vdev);
 	mutex_unlock(&csi->mdev.graph_mutex);
 
 	/* release all active buffers */

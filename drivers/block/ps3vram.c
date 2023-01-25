@@ -587,6 +587,8 @@ static void ps3vram_submit_bio(struct bio *bio)
 	dev_dbg(&dev->core, "%s\n", __func__);
 
 	bio = bio_split_to_limits(bio);
+	if (!bio)
+		return;
 
 	spin_lock_irq(&priv->lock);
 	busy = !bio_list_empty(&priv->list);
@@ -745,7 +747,7 @@ static int ps3vram_probe(struct ps3_system_bus_device *dev)
 	gendisk->flags |= GENHD_FL_NO_PART;
 	gendisk->fops = &ps3vram_fops;
 	gendisk->private_data = dev;
-	strlcpy(gendisk->disk_name, DEVICE_NAME, sizeof(gendisk->disk_name));
+	strscpy(gendisk->disk_name, DEVICE_NAME, sizeof(gendisk->disk_name));
 	set_capacity(gendisk, priv->size >> 9);
 	blk_queue_max_segments(gendisk->queue, BLK_MAX_SEGMENTS);
 	blk_queue_max_segment_size(gendisk->queue, BLK_MAX_SEGMENT_SIZE);

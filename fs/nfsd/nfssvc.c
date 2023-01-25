@@ -447,8 +447,8 @@ static void nfsd_shutdown_net(struct net *net)
 {
 	struct nfsd_net *nn = net_generic(net, nfsd_net_id);
 
-	nfsd_file_cache_shutdown_net(net);
 	nfs4_state_shutdown_net(net);
+	nfsd_file_cache_shutdown_net(net);
 	if (nn->lockd_up) {
 		lockd_down(net);
 		nn->lockd_up = false;
@@ -799,7 +799,7 @@ nfsd_svc(int nrservs, struct net *net, const struct cred *cred)
 	if (nrservs == 0 && nn->nfsd_serv == NULL)
 		goto out;
 
-	strlcpy(nn->nfsd_name, utsname()->nodename,
+	strscpy(nn->nfsd_name, utsname()->nodename,
 		sizeof(nn->nfsd_name));
 
 	error = nfsd_create_serv(net);

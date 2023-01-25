@@ -100,6 +100,7 @@
  *
  */
 
+#include <linux/aperture.h>
 #include <linux/version.h>
 
 #include "matroxfb_base.h"
@@ -1377,8 +1378,8 @@ static struct video_board vbG200 = {
 	.lowlevel = &matrox_G100
 };
 static struct video_board vbG200eW = {
-	.maxvram = 0x100000,
-	.maxdisplayable = 0x800000,
+	.maxvram = 0x1000000,
+	.maxdisplayable = 0x0800000,
 	.accelID = FB_ACCEL_MATROX_MGAG200,
 	.lowlevel = &matrox_G100
 };
@@ -2043,6 +2044,10 @@ static int matroxfb_probe(struct pci_dev* pdev, const struct pci_device_id* dumm
 	int err;
 	u_int32_t cmd;
 	DBG(__func__)
+
+	err = aperture_remove_conflicting_pci_devices(pdev, "matroxfb");
+	if (err)
+		return err;
 
 	svid = pdev->subsystem_vendor;
 	sid = pdev->subsystem_device;

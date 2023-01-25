@@ -375,11 +375,6 @@ struct qca8k_mdio_cache {
  * mdio writes
  */
 	u16 page;
-/* lo and hi can also be cached and from Documentation we can skip one
- * extra mdio write if lo or hi is didn't change.
- */
-	u16 lo;
-	u16 hi;
 };
 
 struct qca8k_pcs {
@@ -512,7 +507,8 @@ int qca8k_port_vlan_del(struct dsa_switch *ds, int port,
 
 /* Common port LAG function */
 int qca8k_port_lag_join(struct dsa_switch *ds, int port, struct dsa_lag lag,
-			struct netdev_lag_upper_info *info);
+			struct netdev_lag_upper_info *info,
+			struct netlink_ext_ack *extack);
 int qca8k_port_lag_leave(struct dsa_switch *ds, int port,
 			 struct dsa_lag lag);
 

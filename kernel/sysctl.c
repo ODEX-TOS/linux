@@ -85,9 +85,16 @@
 #include <linux/user_namespace.h>
 #endif
 
+/* shared constants to be used in various sysctls */
+const int sysctl_vals[] = { 0, 1, 2, 3, 4, 100, 200, 1000, 3000, INT_MAX, 65535, -1 };
+EXPORT_SYMBOL(sysctl_vals);
+
+const unsigned long sysctl_long_vals[] = { 0, 1, LONG_MAX };
+EXPORT_SYMBOL_GPL(sysctl_long_vals);
+
 #if defined(CONFIG_SYSCTL)
 
-/* Constants used for minimum and  maximum */
+/* Constants used for minimum and maximum */
 
 #ifdef CONFIG_PERF_EVENTS
 static const int six_hundred_forty_kb = 640 * 1024;
@@ -130,11 +137,6 @@ static enum sysctl_writes_mode sysctl_writes_strict = SYSCTL_WRITES_STRICT;
 #if defined(HAVE_ARCH_PICK_MMAP_LAYOUT) || \
     defined(CONFIG_ARCH_WANT_DEFAULT_TOPDOWN_MMAP_LAYOUT)
 int sysctl_legacy_va_layout;
-#endif
-
-#ifdef CONFIG_COMPACTION
-/* min_extfrag_threshold is SYSCTL_ZERO */;
-static const int max_extfrag_threshold = 1000;
 #endif
 
 #endif /* CONFIG_SYSCTL */
@@ -268,13 +270,14 @@ int proc_dostring(struct ctl_table *table, int write,
 			ppos);
 }
 
-static size_t proc_skip_spaces(char **buf)
+static void proc_skip_spaces(char **buf, size_t *size)
 {
-	size_t ret;
-	char *tmp = skip_spaces(*buf);
-	ret = tmp - *buf;
-	*buf = tmp;
-	return ret;
+	while (*size) {
+		if (!isspace(**buf))
+			break;
+		(*size)--;
+		(*buf)++;
+	}
 }
 
 static void proc_skip_char(char **buf, size_t *size, const char v)
@@ -343,13 +346,12 @@ static int proc_get_long(char **buf, size_t *size,
 			  unsigned long *val, bool *neg,
 			  const char *perm_tr, unsigned perm_tr_len, char *tr)
 {
-	int len;
 	char *p, tmp[TMPBUFLEN];
+	ssize_t len = *size;
 
-	if (!*size)
+	if (len <= 0)
 		return -EINVAL;
 
-	len = *size;
 	if (len > TMPBUFLEN - 1)
 		len = TMPBUFLEN - 1;
 
@@ -522,7 +524,7 @@ static int __do_proc_dointvec(void *tbl_data, struct ctl_table *table,
 		bool neg;
 
 		if (write) {
-			left -= proc_skip_spaces(&p);
+			proc_skip_spaces(&p, &left);
 
 			if (!left)
 				break;
@@ -549,7 +551,7 @@ static int __do_proc_dointvec(void *tbl_data, struct ctl_table *table,
 	if (!write && !first && left && !err)
 		proc_put_char(&buffer, &left, '\n');
 	if (write && !err && left)
-		left -= proc_skip_spaces(&p);
+		proc_skip_spaces(&p, &left);
 	if (write && first)
 		return err ? : -EINVAL;
 	*lenp -= left;
@@ -591,7 +593,7 @@ static int do_proc_douintvec_w(unsigned int *tbl_data,
 	if (left > PAGE_SIZE - 1)
 		left = PAGE_SIZE - 1;
 
-	left -= proc_skip_spaces(&p);
+	proc_skip_spaces(&p, &left);
 	if (!left) {
 		err = -EINVAL;
 		goto out_free;
@@ -611,7 +613,7 @@ static int do_proc_douintvec_w(unsigned int *tbl_data,
 	}
 
 	if (!err && left)
-		left -= proc_skip_spaces(&p);
+		proc_skip_spaces(&p, &left);
 
 out_free:
 	if (err)
@@ -1055,9 +1057,9 @@ static int __do_proc_doulongvec_minmax(void *data, struct ctl_table *table,
 		return 0;
 	}
 
-	i = (unsigned long *) data;
-	min = (unsigned long *) table->extra1;
-	max = (unsigned long *) table->extra2;
+	i = data;
+	min = table->extra1;
+	max = table->extra2;
 	vleft = table->maxlen / sizeof(unsigned long);
 	left = *lenp;
 
@@ -1076,7 +1078,7 @@ static int __do_proc_doulongvec_minmax(void *data, struct ctl_table *table,
 		if (write) {
 			bool neg;
 
-			left -= proc_skip_spaces(&p);
+			proc_skip_spaces(&p, &left);
 			if (!left)
 				break;
 
@@ -1105,7 +1107,7 @@ static int __do_proc_doulongvec_minmax(void *data, struct ctl_table *table,
 	if (!write && !first && left && !err)
 		proc_put_char(&buffer, &left, '\n');
 	if (write && !err)
-		left -= proc_skip_spaces(&p);
+		proc_skip_spaces(&p, &left);
 	if (write && first)
 		return err ? : -EINVAL;
 	*lenp -= left;
@@ -1643,6 +1645,14 @@ static struct ctl_table kern_table[] = {
 		.proc_handler	= sysctl_numa_balancing,
 		.extra1		= SYSCTL_ZERO,
 		.extra2		= SYSCTL_FOUR,
+	},
+	{
+		.procname	= "numa_balancing_promote_rate_limit_MBps",
+		.data		= &sysctl_numa_balancing_promote_rate_limit,
+		.maxlen		= sizeof(unsigned int),
+		.mode		= 0644,
+		.proc_handler	= proc_dointvec_minmax,
+		.extra1		= SYSCTL_ZERO,
 	},
 #endif /* CONFIG_NUMA_BALANCING */
 	{
@@ -2228,7 +2238,7 @@ static struct ctl_table vm_table[] = {
 		.mode		= 0644,
 		.proc_handler	= proc_dointvec_minmax,
 		.extra1		= SYSCTL_ZERO,
-		.extra2		= (void *)&max_extfrag_threshold,
+		.extra2		= SYSCTL_ONE_THOUSAND,
 	},
 	{
 		.procname	= "compact_unevictable_allowed",

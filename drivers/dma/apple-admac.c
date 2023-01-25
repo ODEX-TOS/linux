@@ -12,13 +12,20 @@
 #include <linux/module.h>
 #include <linux/of_device.h>
 #include <linux/of_dma.h>
-#include <linux/interrupt.h>
+#include <linux/reset.h>
 #include <linux/spinlock.h>
+#include <linux/interrupt.h>
 
 #include "dmaengine.h"
 
 #define NCHANNELS_MAX	64
 #define IRQ_NOUTPUTS	4
+
+/*
+ * For allocation purposes we split the cache
+ * memory into blocks of fixed size (given in bytes).
+ */
+#define SRAM_BLOCK	2048
 
 #define RING_WRITE_SLOT		GENMASK(1, 0)
 #define RING_READ_SLOT		GENMASK(5, 4)
@@ -35,6 +42,9 @@
 #define REG_TX_STOP		0x0004
 #define REG_RX_START		0x0008
 #define REG_RX_STOP		0x000c
+#define REG_IMPRINT		0x0090
+#define REG_TX_SRAM_SIZE	0x0094
+#define REG_RX_SRAM_SIZE	0x0098
 
 #define REG_CHAN_CTL(ch)	(0x8000 + (ch) * 0x200)
 #define REG_CHAN_CTL_RST_RINGS	BIT(0)
@@ -52,7 +62,9 @@
 #define BUS_WIDTH_FRAME_2_WORDS	0x10
 #define BUS_WIDTH_FRAME_4_WORDS	0x20
 
-#define CHAN_BUFSIZE		0x8000
+#define REG_CHAN_SRAM_CARVEOUT(ch)	(0x8050 + (ch) * 0x200)
+#define CHAN_SRAM_CARVEOUT_SIZE		GENMASK(31, 16)
+#define CHAN_SRAM_CARVEOUT_BASE		GENMASK(15, 0)
 
 #define REG_CHAN_FIFOCTL(ch)	(0x8054 + (ch) * 0x200)
 #define CHAN_FIFOCTL_LIMIT	GENMASK(31, 16)
@@ -75,6 +87,8 @@ struct admac_chan {
 	struct dma_chan chan;
 	struct tasklet_struct tasklet;
 
+	u32 carveout;
+
 	spinlock_t lock;
 	struct admac_tx *current_tx;
 	int nperiod_acks;
@@ -91,11 +105,25 @@ struct admac_chan {
 	struct list_head to_free;
 };
 
+struct admac_sram {
+	u32 size;
+	/*
+	 * SRAM_CARVEOUT has 16-bit fields, so the SRAM cannot be larger than
+	 * 64K and a 32-bit bitfield over 2K blocks covers it.
+	 */
+	u32 allocated;
+};
+
 struct admac_data {
 	struct dma_device dma;
 	struct device *dev;
 	__iomem void *base;
+	struct reset_control *rstc;
 
+	struct mutex cache_alloc_lock;
+	struct admac_sram txcache, rxcache;
+
+	int irq;
 	int irq_index;
 	int nchannels;
 	struct admac_chan channels[];
@@ -114,6 +142,60 @@ struct admac_tx {
 
 	struct list_head node;
 };
+
+static int admac_alloc_sram_carveout(struct admac_data *ad,
+				     enum dma_transfer_direction dir,
+				     u32 *out)
+{
+	struct admac_sram *sram;
+	int i, ret = 0, nblocks;
+
+	if (dir == DMA_MEM_TO_DEV)
+		sram = &ad->txcache;
+	else
+		sram = &ad->rxcache;
+
+	mutex_lock(&ad->cache_alloc_lock);
+
+	nblocks = sram->size / SRAM_BLOCK;
+	for (i = 0; i < nblocks; i++)
+		if (!(sram->allocated & BIT(i)))
+			break;
+
+	if (i < nblocks) {
+		*out = FIELD_PREP(CHAN_SRAM_CARVEOUT_BASE, i * SRAM_BLOCK) |
+			FIELD_PREP(CHAN_SRAM_CARVEOUT_SIZE, SRAM_BLOCK);
+		sram->allocated |= BIT(i);
+	} else {
+		ret = -EBUSY;
+	}
+
+	mutex_unlock(&ad->cache_alloc_lock);
+
+	return ret;
+}
+
+static void admac_free_sram_carveout(struct admac_data *ad,
+				     enum dma_transfer_direction dir,
+				     u32 carveout)
+{
+	struct admac_sram *sram;
+	u32 base = FIELD_GET(CHAN_SRAM_CARVEOUT_BASE, carveout);
+	int i;
+
+	if (dir == DMA_MEM_TO_DEV)
+		sram = &ad->txcache;
+	else
+		sram = &ad->rxcache;
+
+	if (WARN_ON(base >= sram->size))
+		return;
+
+	mutex_lock(&ad->cache_alloc_lock);
+	i = base / SRAM_BLOCK;
+	sram->allocated &= ~BIT(i);
+	mutex_unlock(&ad->cache_alloc_lock);
+}
 
 static void admac_modify(struct admac_data *ad, int reg, u32 mask, u32 val)
 {
@@ -463,15 +545,28 @@ static void admac_synchronize(struct dma_chan *chan)
 static int admac_alloc_chan_resources(struct dma_chan *chan)
 {
 	struct admac_chan *adchan = to_admac_chan(chan);
+	struct admac_data *ad = adchan->host;
+	int ret;
 
 	dma_cookie_init(&adchan->chan);
+	ret = admac_alloc_sram_carveout(ad, admac_chan_direction(adchan->no),
+					&adchan->carveout);
+	if (ret < 0)
+		return ret;
+
+	writel_relaxed(adchan->carveout,
+		       ad->base + REG_CHAN_SRAM_CARVEOUT(adchan->no));
 	return 0;
 }
 
 static void admac_free_chan_resources(struct dma_chan *chan)
 {
+	struct admac_chan *adchan = to_admac_chan(chan);
+
 	admac_terminate_all(chan);
 	admac_synchronize(chan);
+	admac_free_sram_carveout(adchan->host, admac_chan_direction(adchan->no),
+				 adchan->carveout);
 }
 
 static struct dma_chan *admac_dma_of_xlate(struct of_phandle_args *dma_spec,
@@ -490,7 +585,7 @@ static struct dma_chan *admac_dma_of_xlate(struct of_phandle_args *dma_spec,
 		return NULL;
 	}
 
-	return &ad->channels[index].chan;
+	return dma_get_slave_channel(&ad->channels[index].chan);
 }
 
 static int admac_drain_reports(struct admac_data *ad, int channo)
@@ -709,6 +804,7 @@ static int admac_probe(struct platform_device *pdev)
 	platform_set_drvdata(pdev, ad);
 	ad->dev = &pdev->dev;
 	ad->nchannels = nchannels;
+	mutex_init(&ad->cache_alloc_lock);
 
 	/*
 	 * The controller has 4 IRQ outputs. Try them all until
@@ -724,17 +820,16 @@ static int admac_probe(struct platform_device *pdev)
 
 	if (irq < 0)
 		return dev_err_probe(&pdev->dev, irq, "no usable interrupt\n");
-
-	err = devm_request_irq(&pdev->dev, irq, admac_interrupt,
-			       0, dev_name(&pdev->dev), ad);
-	if (err)
-		return dev_err_probe(&pdev->dev, err,
-				     "unable to register interrupt\n");
+	ad->irq = irq;
 
 	ad->base = devm_platform_ioremap_resource(pdev, 0);
 	if (IS_ERR(ad->base))
 		return dev_err_probe(&pdev->dev, PTR_ERR(ad->base),
 				     "unable to obtain MMIO resource\n");
+
+	ad->rstc = devm_reset_control_get_optional_shared(&pdev->dev, NULL);
+	if (IS_ERR(ad->rstc))
+		return PTR_ERR(ad->rstc);
 
 	dma = &ad->dma;
 
@@ -774,17 +869,45 @@ static int admac_probe(struct platform_device *pdev)
 		tasklet_setup(&adchan->tasklet, admac_chan_tasklet);
 	}
 
-	err = dma_async_device_register(&ad->dma);
+	err = reset_control_reset(ad->rstc);
 	if (err)
-		return dev_err_probe(&pdev->dev, err, "failed to register DMA device\n");
+		return dev_err_probe(&pdev->dev, err,
+				     "unable to trigger reset\n");
+
+	err = request_irq(irq, admac_interrupt, 0, dev_name(&pdev->dev), ad);
+	if (err) {
+		dev_err_probe(&pdev->dev, err,
+				"unable to register interrupt\n");
+		goto free_reset;
+	}
+
+	err = dma_async_device_register(&ad->dma);
+	if (err) {
+		dev_err_probe(&pdev->dev, err, "failed to register DMA device\n");
+		goto free_irq;
+	}
 
 	err = of_dma_controller_register(pdev->dev.of_node, admac_dma_of_xlate, ad);
 	if (err) {
 		dma_async_device_unregister(&ad->dma);
-		return dev_err_probe(&pdev->dev, err, "failed to register with OF\n");
+		dev_err_probe(&pdev->dev, err, "failed to register with OF\n");
+		goto free_irq;
 	}
 
+	ad->txcache.size = readl_relaxed(ad->base + REG_TX_SRAM_SIZE);
+	ad->rxcache.size = readl_relaxed(ad->base + REG_RX_SRAM_SIZE);
+
+	dev_info(&pdev->dev, "Audio DMA Controller\n");
+	dev_info(&pdev->dev, "imprint %x TX cache %u RX cache %u\n",
+		 readl_relaxed(ad->base + REG_IMPRINT), ad->txcache.size, ad->rxcache.size);
+
 	return 0;
+
+free_irq:
+	free_irq(ad->irq, ad);
+free_reset:
+	reset_control_rearm(ad->rstc);
+	return err;
 }
 
 static int admac_remove(struct platform_device *pdev)
@@ -793,6 +916,8 @@ static int admac_remove(struct platform_device *pdev)
 
 	of_dma_controller_free(pdev->dev.of_node);
 	dma_async_device_unregister(&ad->dma);
+	free_irq(ad->irq, ad);
+	reset_control_rearm(ad->rstc);
 
 	return 0;
 }

@@ -244,6 +244,8 @@ struct mlx5_esw_offload {
 
 	struct mlx5_flow_table *ft_offloads;
 	struct mlx5_flow_group *vport_rx_group;
+	struct mlx5_flow_group *vport_rx_drop_group;
+	struct mlx5_flow_handle *vport_rx_drop_rule;
 	struct xarray vport_reps;
 	struct list_head peer_flows;
 	struct mutex peer_mutex;
@@ -344,7 +346,10 @@ void esw_offloads_disable(struct mlx5_eswitch *esw);
 int esw_offloads_enable(struct mlx5_eswitch *esw);
 void esw_offloads_cleanup_reps(struct mlx5_eswitch *esw);
 int esw_offloads_init_reps(struct mlx5_eswitch *esw);
-void esw_offloads_del_send_to_vport_meta_rules(struct mlx5_eswitch *esw);
+
+struct mlx5_flow_handle *
+mlx5_eswitch_add_send_to_vport_meta_rule(struct mlx5_eswitch *esw, u16 vport_num);
+void mlx5_eswitch_del_send_to_vport_meta_rule(struct mlx5_flow_handle *rule);
 
 bool mlx5_esw_vport_match_metadata_supported(const struct mlx5_eswitch *esw);
 int mlx5_esw_offloads_vport_metadata_set(struct mlx5_eswitch *esw, bool enable);
@@ -512,6 +517,12 @@ int mlx5_eswitch_del_vlan_action(struct mlx5_eswitch *esw,
 				 struct mlx5_flow_attr *attr);
 int __mlx5_eswitch_set_vport_vlan(struct mlx5_eswitch *esw,
 				  u16 vport, u16 vlan, u8 qos, u8 set_flags);
+
+static inline bool esw_vst_mode_is_steering(struct mlx5_eswitch *esw)
+{
+	return (MLX5_CAP_ESW_EGRESS_ACL(esw->dev, pop_vlan) &&
+		MLX5_CAP_ESW_INGRESS_ACL(esw->dev, push_vlan));
+}
 
 static inline bool mlx5_eswitch_vlan_actions_supported(struct mlx5_core_dev *dev,
 						       u8 vlan_depth)
@@ -730,6 +741,14 @@ int mlx5_eswitch_offloads_config_single_fdb(struct mlx5_eswitch *master_esw,
 void mlx5_eswitch_offloads_destroy_single_fdb(struct mlx5_eswitch *master_esw,
 					      struct mlx5_eswitch *slave_esw);
 int mlx5_eswitch_reload_reps(struct mlx5_eswitch *esw);
+
+static inline int mlx5_eswitch_num_vfs(struct mlx5_eswitch *esw)
+{
+	if (mlx5_esw_allowed(esw))
+		return esw->esw_funcs.num_vfs;
+
+	return 0;
+}
 
 #else  /* CONFIG_MLX5_ESWITCH */
 /* eswitch API stubs */

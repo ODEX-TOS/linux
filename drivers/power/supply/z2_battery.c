@@ -206,10 +206,12 @@ static int z2_batt_probe(struct i2c_client *client,
 
 	charger->charge_gpiod = devm_gpiod_get_optional(&client->dev,
 							NULL, GPIOD_IN);
-	if (IS_ERR(charger->charge_gpiod))
-		return dev_err_probe(&client->dev,
+	if (IS_ERR(charger->charge_gpiod)) {
+		ret = dev_err_probe(&client->dev,
 				     PTR_ERR(charger->charge_gpiod),
 				     "failed to get charge GPIO\n");
+		goto err;
+	}
 
 	if (charger->charge_gpiod) {
 		gpiod_set_consumer_name(charger->charge_gpiod, "BATT CHRG");
@@ -251,7 +253,7 @@ err:
 	return ret;
 }
 
-static int z2_batt_remove(struct i2c_client *client)
+static void z2_batt_remove(struct i2c_client *client)
 {
 	struct z2_charger *charger = i2c_get_clientdata(client);
 
@@ -263,8 +265,6 @@ static int z2_batt_remove(struct i2c_client *client)
 		free_irq(gpiod_to_irq(charger->charge_gpiod), charger);
 
 	kfree(charger);
-
-	return 0;
 }
 
 #ifdef CONFIG_PM

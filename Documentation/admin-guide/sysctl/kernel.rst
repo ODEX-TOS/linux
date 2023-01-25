@@ -65,6 +65,11 @@ combining the following values:
 4 s3_beep
 = =======
 
+arch
+====
+
+The machine hardware name, the same output as ``uname -m``
+(e.g. ``x86_64`` or ``aarch64``).
 
 auto_msgmni
 ===========
@@ -635,6 +640,17 @@ different types of memory (represented as different NUMA nodes) to
 place the hot pages in the fast memory.  This is implemented based on
 unmapping and page fault too.
 
+numa_balancing_promote_rate_limit_MBps
+======================================
+
+Too high promotion/demotion throughput between different memory types
+may hurt application latency.  This can be used to rate limit the
+promotion throughput.  The per-node max promotion throughput in MB/s
+will be limited to be no more than the set value.
+
+A rule of thumb is to set this to less than 1/10 of the PMEM node
+write bandwidth.
+
 oops_all_cpu_backtrace
 ======================
 
@@ -649,6 +665,15 @@ This is the default behavior.
 
 1: Will non-maskably interrupt all CPUs and dump their backtraces when
 an oops event is detected.
+
+
+oops_limit
+==========
+
+Number of kernel oopses after which the kernel should panic when
+``panic_on_oops`` is not set. Setting this to 0 disables checking
+the count. Setting this to  1 has the same effect as setting
+``panic_on_oops=1``. The default value is 10000.
 
 
 osrelease, ostype & version
@@ -1298,6 +1323,29 @@ watchdog work to be queued by the watchdog timer function, otherwise the NMI
 watchdog — if enabled — can detect a hard lockup condition.
 
 
+split_lock_mitigate (x86 only)
+==============================
+
+On x86, each "split lock" imposes a system-wide performance penalty. On larger
+systems, large numbers of split locks from unprivileged users can result in
+denials of service to well-behaved and potentially more important users.
+
+The kernel mitigates these bad users by detecting split locks and imposing
+penalties: forcing them to wait and only allowing one core to execute split
+locks at a time.
+
+These mitigations can make those bad applications unbearably slow. Setting
+split_lock_mitigate=0 may restore some application performance, but will also
+increase system exposure to denial of service attacks from split lock users.
+
+= ===================================================================
+0 Disable the mitigation mode - just warns the split lock on kernel log
+  and exposes the system to denials of service from the split lockers.
+1 Enable the mitigation mode (this is the default) - penalizes the split
+  lockers with intentional performance degradation.
+= ===================================================================
+
+
 stack_erasing
 =============
 
@@ -1483,6 +1531,16 @@ entry will default to 2 instead of 0.
 1 Unprivileged calls to ``bpf()`` are disabled without recovery
 2 Unprivileged calls to ``bpf()`` are disabled
 = =============================================================
+
+
+warn_limit
+==========
+
+Number of kernel warnings after which the kernel should panic when
+``panic_on_warn`` is not set. Setting this to 0 disables checking
+the warning count. Setting this to 1 has the same effect as setting
+``panic_on_warn=1``. The default value is 0.
+
 
 watchdog
 ========

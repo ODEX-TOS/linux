@@ -350,6 +350,8 @@ static comp_t encode_comp_t(unsigned long value)
 		exp++;
 	}
 
+	if (exp > (((comp_t) ~0U) >> MANTSIZE))
+		return (comp_t) ~0U;
 	/*
 	 * Clean it up and polish it off.
 	 */
@@ -555,15 +557,14 @@ void acct_collect(long exitcode, int group_dead)
 	unsigned long vsize = 0;
 
 	if (group_dead && current->mm) {
+		struct mm_struct *mm = current->mm;
+		VMA_ITERATOR(vmi, mm, 0);
 		struct vm_area_struct *vma;
 
-		mmap_read_lock(current->mm);
-		vma = current->mm->mmap;
-		while (vma) {
+		mmap_read_lock(mm);
+		for_each_vma(vmi, vma)
 			vsize += vma->vm_end - vma->vm_start;
-			vma = vma->vm_next;
-		}
-		mmap_read_unlock(current->mm);
+		mmap_read_unlock(mm);
 	}
 
 	spin_lock_irq(&current->sighand->siglock);

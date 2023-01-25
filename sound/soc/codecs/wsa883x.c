@@ -7,7 +7,7 @@
 #include <linux/debugfs.h>
 #include <linux/delay.h>
 #include <linux/device.h>
-#include <linux/gpio.h>
+#include <linux/gpio/consumer.h>
 #include <linux/init.h>
 #include <linux/kernel.h>
 #include <linux/module.h>
@@ -415,7 +415,6 @@
 
 #define WSA883X_NUM_REGISTERS           (WSA883X_EMEM_63 + 1)
 #define WSA883X_MAX_REGISTER            (WSA883X_NUM_REGISTERS - 1)
-#define WSA883X_PROBE_TIMEOUT 1000
 
 #define WSA883X_VERSION_1_0 0
 #define WSA883X_VERSION_1_1 1
@@ -1393,7 +1392,7 @@ static int wsa883x_probe(struct sdw_slave *pdev,
 	}
 
 	wsa883x->sd_n = devm_gpiod_get_optional(&pdev->dev, "powerdown",
-						GPIOD_FLAGS_BIT_NONEXCLUSIVE);
+						GPIOD_FLAGS_BIT_NONEXCLUSIVE | GPIOD_OUT_HIGH);
 	if (IS_ERR(wsa883x->sd_n)) {
 		dev_err(&pdev->dev, "Shutdown Control GPIO not found\n");
 		ret = PTR_ERR(wsa883x->sd_n);
@@ -1409,9 +1408,10 @@ static int wsa883x_probe(struct sdw_slave *pdev,
 	wsa883x->sconfig.type = SDW_STREAM_PDM;
 
 	pdev->prop.sink_ports = GENMASK(WSA883X_MAX_SWR_PORTS, 0);
+	pdev->prop.simple_clk_stop_capable = true;
 	pdev->prop.sink_dpn_prop = wsa_sink_dpn_prop;
 	pdev->prop.scp_int1_mask = SDW_SCP_INT1_BUS_CLASH | SDW_SCP_INT1_PARITY;
-	gpiod_direction_output(wsa883x->sd_n, 1);
+	gpiod_direction_output(wsa883x->sd_n, 0);
 
 	wsa883x->regmap = devm_regmap_init_sdw(pdev, &wsa883x_regmap_config);
 	if (IS_ERR(wsa883x->regmap)) {
@@ -1440,43 +1440,17 @@ err:
 static int __maybe_unused wsa883x_runtime_suspend(struct device *dev)
 {
 	struct regmap *regmap = dev_get_regmap(dev, NULL);
-	struct wsa883x_priv *wsa883x = dev_get_drvdata(dev);
-
-	gpiod_direction_output(wsa883x->sd_n, 0);
 
 	regcache_cache_only(regmap, true);
 	regcache_mark_dirty(regmap);
 
-	regulator_disable(wsa883x->vdd);
 	return 0;
 }
 
 static int __maybe_unused wsa883x_runtime_resume(struct device *dev)
 {
-	struct sdw_slave *slave = dev_to_sdw_dev(dev);
 	struct regmap *regmap = dev_get_regmap(dev, NULL);
-	struct wsa883x_priv *wsa883x = dev_get_drvdata(dev);
-	unsigned long time;
-	int ret;
 
-	ret = regulator_enable(wsa883x->vdd);
-	if (ret) {
-		dev_err(dev, "Failed to enable vdd regulator (%d)\n", ret);
-		return ret;
-	}
-
-	gpiod_direction_output(wsa883x->sd_n, 1);
-
-	time = wait_for_completion_timeout(&slave->initialization_complete,
-					   msecs_to_jiffies(WSA883X_PROBE_TIMEOUT));
-	if (!time) {
-		dev_err(dev, "Initialization not complete, timed out\n");
-		gpiod_direction_output(wsa883x->sd_n, 0);
-		regulator_disable(wsa883x->vdd);
-		return -ETIMEDOUT;
-	}
-
-	usleep_range(20000, 20010);
 	regcache_cache_only(regmap, false);
 	regcache_sync(regmap);
 

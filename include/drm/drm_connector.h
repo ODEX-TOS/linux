@@ -324,6 +324,22 @@ struct drm_monitor_range_info {
 };
 
 /**
+ * struct drm_luminance_range_info - Panel's luminance range for
+ * &drm_display_info. Calculated using data in EDID
+ *
+ * This struct is used to store a luminance range supported by panel
+ * as calculated using data from EDID's static hdr metadata.
+ *
+ * @min_luminance: This is the min supported luminance value
+ *
+ * @max_luminance: This is the max supported luminance value
+ */
+struct drm_luminance_range_info {
+	u32 min_luminance;
+	u32 max_luminance;
+};
+
+/**
  * enum drm_privacy_screen_status - privacy screen status
  *
  * This enum is used to track and control the state of the integrated privacy
@@ -625,6 +641,11 @@ struct drm_display_info {
 	struct drm_monitor_range_info monitor_range;
 
 	/**
+	 * @luminance_range: Luminance range supported by panel
+	 */
+	struct drm_luminance_range_info luminance_range;
+
+	/**
 	 * @mso_stream_count: eDP Multi-SST Operation (MSO) stream count from
 	 * the DisplayID VESA vendor block. 0 for conventional Single-Stream
 	 * Transport (SST), or 2 or 4 MSO streams.
@@ -635,6 +656,12 @@ struct drm_display_info {
 	 * @mso_pixel_overlap: eDP MSO segment pixel overlap, 0-8 pixels.
 	 */
 	u8 mso_pixel_overlap;
+
+	/**
+	 * @max_dsc_bpp: Maximum DSC target bitrate, if it is set to 0 the
+	 * monitor's default value is used instead.
+	 */
+	u32 max_dsc_bpp;
 };
 
 int drm_display_info_set_bus_formats(struct drm_display_info *info,
@@ -1677,6 +1704,11 @@ int drm_connector_init_with_ddc(struct drm_device *dev,
 				const struct drm_connector_funcs *funcs,
 				int connector_type,
 				struct i2c_adapter *ddc);
+int drmm_connector_init(struct drm_device *dev,
+			struct drm_connector *connector,
+			const struct drm_connector_funcs *funcs,
+			int connector_type,
+			struct i2c_adapter *ddc);
 void drm_connector_attach_edid_property(struct drm_connector *connector);
 int drm_connector_register(struct drm_connector *connector);
 void drm_connector_unregister(struct drm_connector *connector);

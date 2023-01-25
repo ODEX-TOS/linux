@@ -1225,8 +1225,6 @@ int btf__load_into_kernel(struct btf *btf)
 	return btf_load_into_kernel(btf, NULL, 0, 0);
 }
 
-int btf__load(struct btf *) __attribute__((alias("btf__load_into_kernel")));
-
 int btf__fd(const struct btf *btf)
 {
 	return btf->fd;
@@ -3889,14 +3887,14 @@ static inline __u16 btf_fwd_kind(struct btf_type *t)
 }
 
 /* Check if given two types are identical ARRAY definitions */
-static int btf_dedup_identical_arrays(struct btf_dedup *d, __u32 id1, __u32 id2)
+static bool btf_dedup_identical_arrays(struct btf_dedup *d, __u32 id1, __u32 id2)
 {
 	struct btf_type *t1, *t2;
 
 	t1 = btf_type_by_id(d->btf, id1);
 	t2 = btf_type_by_id(d->btf, id2);
 	if (!btf_is_array(t1) || !btf_is_array(t2))
-		return 0;
+		return false;
 
 	return btf_equal_array(t1, t2);
 }
@@ -3920,7 +3918,9 @@ static bool btf_dedup_identical_structs(struct btf_dedup *d, __u32 id1, __u32 id
 	m1 = btf_members(t1);
 	m2 = btf_members(t2);
 	for (i = 0, n = btf_vlen(t1); i < n; i++, m1++, m2++) {
-		if (m1->type != m2->type)
+		if (m1->type != m2->type &&
+		    !btf_dedup_identical_arrays(d, m1->type, m2->type) &&
+		    !btf_dedup_identical_structs(d, m1->type, m2->type))
 			return false;
 	}
 	return true;
@@ -4644,20 +4644,17 @@ static int btf_dedup_remap_types(struct btf_dedup *d)
  */
 struct btf *btf__load_vmlinux_btf(void)
 {
-	struct {
-		const char *path_fmt;
-		bool raw_btf;
-	} locations[] = {
+	const char *locations[] = {
 		/* try canonical vmlinux BTF through sysfs first */
-		{ "/sys/kernel/btf/vmlinux", true /* raw BTF */ },
-		/* fall back to trying to find vmlinux ELF on disk otherwise */
-		{ "/boot/vmlinux-%1$s" },
-		{ "/lib/modules/%1$s/vmlinux-%1$s" },
-		{ "/lib/modules/%1$s/build/vmlinux" },
-		{ "/usr/lib/modules/%1$s/kernel/vmlinux" },
-		{ "/usr/lib/debug/boot/vmlinux-%1$s" },
-		{ "/usr/lib/debug/boot/vmlinux-%1$s.debug" },
-		{ "/usr/lib/debug/lib/modules/%1$s/vmlinux" },
+		"/sys/kernel/btf/vmlinux",
+		/* fall back to trying to find vmlinux on disk otherwise */
+		"/boot/vmlinux-%1$s",
+		"/lib/modules/%1$s/vmlinux-%1$s",
+		"/lib/modules/%1$s/build/vmlinux",
+		"/usr/lib/modules/%1$s/kernel/vmlinux",
+		"/usr/lib/debug/boot/vmlinux-%1$s",
+		"/usr/lib/debug/boot/vmlinux-%1$s.debug",
+		"/usr/lib/debug/lib/modules/%1$s/vmlinux",
 	};
 	char path[PATH_MAX + 1];
 	struct utsname buf;
@@ -4667,15 +4664,12 @@ struct btf *btf__load_vmlinux_btf(void)
 	uname(&buf);
 
 	for (i = 0; i < ARRAY_SIZE(locations); i++) {
-		snprintf(path, PATH_MAX, locations[i].path_fmt, buf.release);
+		snprintf(path, PATH_MAX, locations[i], buf.release);
 
-		if (access(path, R_OK))
+		if (faccessat(AT_FDCWD, path, R_OK, AT_EACCESS))
 			continue;
 
-		if (locations[i].raw_btf)
-			btf = btf__parse_raw(path);
-		else
-			btf = btf__parse_elf(path, NULL);
+		btf = btf__parse(path, NULL);
 		err = libbpf_get_error(btf);
 		pr_debug("loading kernel BTF '%s': %d\n", path, err);
 		if (err)

@@ -675,6 +675,7 @@ void nvme_init_request(struct request *req, struct nvme_command *cmd)
 	if (req->mq_hctx->type == HCTX_TYPE_POLL)
 		req->cmd_flags |= REQ_POLLED;
 	nvme_clear_nvme_request(req);
+	req->rq_flags |= RQF_QUIET;
 	memcpy(nvme_req(req)->cmd, cmd, sizeof(*cmd));
 }
 EXPORT_SYMBOL_GPL(nvme_init_request);
@@ -1037,7 +1038,6 @@ int __nvme_submit_sync_cmd(struct request_queue *q, struct nvme_command *cmd,
 			goto out;
 	}
 
-	req->rq_flags |= RQF_QUIET;
 	ret = nvme_execute_rq(req, at_head);
 	if (result && ret >= 0)
 		*result = nvme_req(req)->result;
@@ -1069,6 +1069,18 @@ static u32 nvme_known_admin_effects(u8 opcode)
 	return 0;
 }
 
+static u32 nvme_known_nvm_effects(u8 opcode)
+{
+	switch (opcode) {
+	case nvme_cmd_write:
+	case nvme_cmd_write_zeroes:
+	case nvme_cmd_write_uncor:
+		 return NVME_CMD_EFFECTS_LBCC;
+	default:
+		return 0;
+	}
+}
+
 u32 nvme_command_effects(struct nvme_ctrl *ctrl, struct nvme_ns *ns, u8 opcode)
 {
 	u32 effects = 0;
@@ -1076,16 +1088,24 @@ u32 nvme_command_effects(struct nvme_ctrl *ctrl, struct nvme_ns *ns, u8 opcode)
 	if (ns) {
 		if (ns->head->effects)
 			effects = le32_to_cpu(ns->head->effects->iocs[opcode]);
+		if (ns->head->ids.csi == NVME_CAP_CSS_NVM)
+			effects |= nvme_known_nvm_effects(opcode);
 		if (effects & ~(NVME_CMD_EFFECTS_CSUPP | NVME_CMD_EFFECTS_LBCC))
 			dev_warn_once(ctrl->device,
-				"IO command:%02x has unhandled effects:%08x\n",
+				"IO command:%02x has unusual effects:%08x\n",
 				opcode, effects);
-		return 0;
-	}
 
-	if (ctrl->effects)
-		effects = le32_to_cpu(ctrl->effects->acs[opcode]);
-	effects |= nvme_known_admin_effects(opcode);
+		/*
+		 * NVME_CMD_EFFECTS_CSE_MASK causes a freeze all I/O queues,
+		 * which would deadlock when done on an I/O command.  Note that
+		 * We already warn about an unusual effect above.
+		 */
+		effects &= ~NVME_CMD_EFFECTS_CSE_MASK;
+	} else {
+		if (ctrl->effects)
+			effects = le32_to_cpu(ctrl->effects->acs[opcode]);
+		effects |= nvme_known_admin_effects(opcode);
+	}
 
 	return effects;
 }
@@ -1172,7 +1192,8 @@ static void nvme_queue_keep_alive_work(struct nvme_ctrl *ctrl)
 	queue_delayed_work(nvme_wq, &ctrl->ka_work, ctrl->kato * HZ / 2);
 }
 
-static void nvme_keep_alive_end_io(struct request *rq, blk_status_t status)
+static enum rq_end_io_ret nvme_keep_alive_end_io(struct request *rq,
+						 blk_status_t status)
 {
 	struct nvme_ctrl *ctrl = rq->end_io_data;
 	unsigned long flags;
@@ -1184,7 +1205,7 @@ static void nvme_keep_alive_end_io(struct request *rq, blk_status_t status)
 		dev_err(ctrl->device,
 			"failed nvme_keep_alive_end_io error=%d\n",
 				status);
-		return;
+		return RQ_END_IO_NONE;
 	}
 
 	ctrl->comp_seen = false;
@@ -1195,6 +1216,7 @@ static void nvme_keep_alive_end_io(struct request *rq, blk_status_t status)
 	spin_unlock_irqrestore(&ctrl->lock, flags);
 	if (startka)
 		nvme_queue_keep_alive_work(ctrl);
+	return RQ_END_IO_NONE;
 }
 
 static void nvme_keep_alive_work(struct work_struct *work)
@@ -1225,7 +1247,6 @@ static void nvme_keep_alive_work(struct work_struct *work)
 	rq->timeout = ctrl->kato * HZ;
 	rq->end_io = nvme_keep_alive_end_io;
 	rq->end_io_data = ctrl;
-	rq->rq_flags |= RQF_QUIET;
 	blk_execute_rq_nowait(rq, false);
 }
 
@@ -2691,7 +2712,7 @@ static void nvme_init_subnqn(struct nvme_subsystem *subsys, struct nvme_ctrl *ct
 	if(!(ctrl->quirks & NVME_QUIRK_IGNORE_DEV_SUBNQN)) {
 		nqnlen = strnlen(id->subnqn, NVMF_NQN_SIZE);
 		if (nqnlen > 0 && nqnlen < NVMF_NQN_SIZE) {
-			strlcpy(subsys->subnqn, id->subnqn, NVMF_NQN_SIZE);
+			strscpy(subsys->subnqn, id->subnqn, NVMF_NQN_SIZE);
 			return;
 		}
 
@@ -2699,7 +2720,11 @@ static void nvme_init_subnqn(struct nvme_subsystem *subsys, struct nvme_ctrl *ct
 			dev_warn(ctrl->device, "missing or invalid SUBNQN field.\n");
 	}
 
-	/* Generate a "fake" NQN per Figure 254 in NVMe 1.3 + ECN 001 */
+	/*
+	 * Generate a "fake" NQN similar to the one in Section 4.5 of the NVMe
+	 * Base Specification 2.0.  It is slightly different from the format
+	 * specified there due to historic reasons, and we can't change it now.
+	 */
 	off = snprintf(subsys->subnqn, NVMF_NQN_SIZE,
 			"nqn.2014.08.org.nvmexpress:%04x%04x",
 			le16_to_cpu(id->vid), le16_to_cpu(id->ssvid));
@@ -3044,7 +3069,7 @@ static int nvme_init_non_mdts_limits(struct nvme_ctrl *ctrl)
 
 	id = kzalloc(sizeof(*id), GFP_KERNEL);
 	if (!id)
-		return 0;
+		return -ENOMEM;
 
 	c.identify.opcode = nvme_admin_identify;
 	c.identify.cns = NVME_ID_CNS_CS_CTRL;
@@ -3090,10 +3115,6 @@ static int nvme_init_identify(struct nvme_ctrl *ctrl)
 	if (!ctrl->identified) {
 		unsigned int i;
 
-		ret = nvme_init_subsystem(ctrl, id);
-		if (ret)
-			goto out_free;
-
 		/*
 		 * Check for quirks.  Quirk can depend on firmware version,
 		 * so, in principle, the set of quirks present can change
@@ -3106,6 +3127,10 @@ static int nvme_init_identify(struct nvme_ctrl *ctrl)
 			if (quirk_matches(id, &core_quirks[i]))
 				ctrl->quirks |= core_quirks[i].quirks;
 		}
+
+		ret = nvme_init_subsystem(ctrl, id);
+		if (ret)
+			goto out_free;
 	}
 	memcpy(ctrl->subsys->firmware_rev, id->fr,
 	       sizeof(ctrl->subsys->firmware_rev));
@@ -3256,8 +3281,12 @@ int nvme_init_ctrl_finish(struct nvme_ctrl *ctrl)
 		return ret;
 
 	if (!ctrl->identified && !nvme_discovery_ctrl(ctrl)) {
+		/*
+		 * Do not return errors unless we are in a controller reset,
+		 * the controller works perfectly fine without hwmon.
+		 */
 		ret = nvme_hwmon_init(ctrl);
-		if (ret < 0)
+		if (ret == -EINTR)
 			return ret;
 	}
 
@@ -3736,13 +3765,17 @@ static ssize_t nvme_ctrl_dhchap_secret_store(struct device *dev,
 	memcpy(dhchap_secret, buf, count);
 	nvme_auth_stop(ctrl);
 	if (strcmp(dhchap_secret, opts->dhchap_secret)) {
+		struct nvme_dhchap_key *key, *host_key;
 		int ret;
 
-		ret = nvme_auth_generate_key(dhchap_secret, &ctrl->host_key);
+		ret = nvme_auth_generate_key(dhchap_secret, &key);
 		if (ret)
 			return ret;
 		kfree(opts->dhchap_secret);
 		opts->dhchap_secret = dhchap_secret;
+		host_key = ctrl->host_key;
+		ctrl->host_key = key;
+		nvme_auth_free_key(host_key);
 		/* Key has changed; re-authentication with new key */
 		nvme_auth_reset(ctrl);
 	}
@@ -3786,13 +3819,17 @@ static ssize_t nvme_ctrl_dhchap_ctrl_secret_store(struct device *dev,
 	memcpy(dhchap_secret, buf, count);
 	nvme_auth_stop(ctrl);
 	if (strcmp(dhchap_secret, opts->dhchap_ctrl_secret)) {
+		struct nvme_dhchap_key *key, *ctrl_key;
 		int ret;
 
-		ret = nvme_auth_generate_key(dhchap_secret, &ctrl->ctrl_key);
+		ret = nvme_auth_generate_key(dhchap_secret, &key);
 		if (ret)
 			return ret;
 		kfree(opts->dhchap_ctrl_secret);
 		opts->dhchap_ctrl_secret = dhchap_secret;
+		ctrl_key = ctrl->ctrl_key;
+		ctrl->ctrl_key = key;
+		nvme_auth_free_key(ctrl_key);
 		/* Key has changed; re-authentication with new key */
 		nvme_auth_reset(ctrl);
 	}
@@ -3972,6 +4009,7 @@ static const struct file_operations nvme_ns_chr_fops = {
 	.unlocked_ioctl	= nvme_ns_chr_ioctl,
 	.compat_ioctl	= compat_ptr_ioctl,
 	.uring_cmd	= nvme_ns_chr_uring_cmd,
+	.uring_cmd_iopoll = nvme_ns_chr_uring_cmd_iopoll,
 };
 
 static int nvme_add_ns_cdev(struct nvme_ns *ns)
@@ -4294,7 +4332,7 @@ static void nvme_ns_remove(struct nvme_ns *ns)
 	mutex_unlock(&ns->ctrl->subsys->lock);
 
 	/* guarantee not available in head->list */
-	synchronize_rcu();
+	synchronize_srcu(&ns->head->srcu);
 
 	if (!nvme_ns_head_multipath(ns->head))
 		nvme_cdev_del(&ns->cdev, &ns->cdev_device);
@@ -4800,6 +4838,107 @@ void nvme_complete_async_event(struct nvme_ctrl *ctrl, __le16 status,
 }
 EXPORT_SYMBOL_GPL(nvme_complete_async_event);
 
+int nvme_alloc_admin_tag_set(struct nvme_ctrl *ctrl, struct blk_mq_tag_set *set,
+		const struct blk_mq_ops *ops, unsigned int flags,
+		unsigned int cmd_size)
+{
+	int ret;
+
+	memset(set, 0, sizeof(*set));
+	set->ops = ops;
+	set->queue_depth = NVME_AQ_MQ_TAG_DEPTH;
+	if (ctrl->ops->flags & NVME_F_FABRICS)
+		set->reserved_tags = NVMF_RESERVED_TAGS;
+	set->numa_node = ctrl->numa_node;
+	set->flags = flags;
+	set->cmd_size = cmd_size;
+	set->driver_data = ctrl;
+	set->nr_hw_queues = 1;
+	set->timeout = NVME_ADMIN_TIMEOUT;
+	ret = blk_mq_alloc_tag_set(set);
+	if (ret)
+		return ret;
+
+	ctrl->admin_q = blk_mq_init_queue(set);
+	if (IS_ERR(ctrl->admin_q)) {
+		ret = PTR_ERR(ctrl->admin_q);
+		goto out_free_tagset;
+	}
+
+	if (ctrl->ops->flags & NVME_F_FABRICS) {
+		ctrl->fabrics_q = blk_mq_init_queue(set);
+		if (IS_ERR(ctrl->fabrics_q)) {
+			ret = PTR_ERR(ctrl->fabrics_q);
+			goto out_cleanup_admin_q;
+		}
+	}
+
+	ctrl->admin_tagset = set;
+	return 0;
+
+out_cleanup_admin_q:
+	blk_mq_destroy_queue(ctrl->admin_q);
+out_free_tagset:
+	blk_mq_free_tag_set(ctrl->admin_tagset);
+	return ret;
+}
+EXPORT_SYMBOL_GPL(nvme_alloc_admin_tag_set);
+
+void nvme_remove_admin_tag_set(struct nvme_ctrl *ctrl)
+{
+	blk_mq_destroy_queue(ctrl->admin_q);
+	if (ctrl->ops->flags & NVME_F_FABRICS)
+		blk_mq_destroy_queue(ctrl->fabrics_q);
+	blk_mq_free_tag_set(ctrl->admin_tagset);
+}
+EXPORT_SYMBOL_GPL(nvme_remove_admin_tag_set);
+
+int nvme_alloc_io_tag_set(struct nvme_ctrl *ctrl, struct blk_mq_tag_set *set,
+		const struct blk_mq_ops *ops, unsigned int flags,
+		unsigned int nr_maps, unsigned int cmd_size)
+{
+	int ret;
+
+	memset(set, 0, sizeof(*set));
+	set->ops = ops;
+	set->queue_depth = ctrl->sqsize + 1;
+	set->reserved_tags = NVMF_RESERVED_TAGS;
+	set->numa_node = ctrl->numa_node;
+	set->flags = flags;
+	set->cmd_size = cmd_size,
+	set->driver_data = ctrl;
+	set->nr_hw_queues = ctrl->queue_count - 1;
+	set->timeout = NVME_IO_TIMEOUT;
+	set->nr_maps = nr_maps;
+	ret = blk_mq_alloc_tag_set(set);
+	if (ret)
+		return ret;
+
+	if (ctrl->ops->flags & NVME_F_FABRICS) {
+		ctrl->connect_q = blk_mq_init_queue(set);
+        	if (IS_ERR(ctrl->connect_q)) {
+			ret = PTR_ERR(ctrl->connect_q);
+			goto out_free_tag_set;
+		}
+	}
+
+	ctrl->tagset = set;
+	return 0;
+
+out_free_tag_set:
+	blk_mq_free_tag_set(set);
+	return ret;
+}
+EXPORT_SYMBOL_GPL(nvme_alloc_io_tag_set);
+
+void nvme_remove_io_tag_set(struct nvme_ctrl *ctrl)
+{
+	if (ctrl->ops->flags & NVME_F_FABRICS)
+		blk_mq_destroy_queue(ctrl->connect_q);
+	blk_mq_free_tag_set(ctrl->tagset);
+}
+EXPORT_SYMBOL_GPL(nvme_remove_io_tag_set);
+
 void nvme_stop_ctrl(struct nvme_ctrl *ctrl)
 {
 	nvme_mpath_stop(ctrl);
@@ -4818,6 +4957,16 @@ void nvme_start_ctrl(struct nvme_ctrl *ctrl)
 	nvme_start_keep_alive(ctrl);
 
 	nvme_enable_aen(ctrl);
+
+	/*
+	 * persistent discovery controllers need to send indication to userspace
+	 * to re-read the discovery log page to learn about possible changes
+	 * that were missed. We identify persistent discovery controllers by
+	 * checking that they started once before, hence are reconnecting back.
+	 */
+	if (test_and_set_bit(NVME_CTRL_STARTED_ONCE, &ctrl->flags) &&
+	    nvme_discovery_ctrl(ctrl))
+		nvme_change_uevent(ctrl, "NVME_EVENT=rediscover");
 
 	if (ctrl->queue_count > 1) {
 		nvme_queue_scan(ctrl);

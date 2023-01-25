@@ -916,7 +916,6 @@ static int setup_callback_client(struct nfs4_client *clp, struct nfs4_cb_conn *c
 	} else {
 		if (!conn->cb_xprt)
 			return -EINVAL;
-		clp->cl_cb_conn.cb_xprt = conn->cb_xprt;
 		clp->cl_cb_session = ses;
 		args.bc_xprt = conn->cb_xprt;
 		args.prognumber = clp->cl_cb_session->se_cb_prog;
@@ -936,6 +935,9 @@ static int setup_callback_client(struct nfs4_client *clp, struct nfs4_cb_conn *c
 		rpc_shutdown_client(client);
 		return -ENOMEM;
 	}
+
+	if (clp->cl_minorversion != 0)
+		clp->cl_cb_conn.cb_xprt = conn->cb_xprt;
 	clp->cl_cb_client = client;
 	clp->cl_cb_cred = cred;
 	rcu_read_lock();
@@ -1371,11 +1373,21 @@ void nfsd4_init_cb(struct nfsd4_callback *cb, struct nfs4_client *clp,
 	cb->cb_holds_slot = false;
 }
 
-void nfsd4_run_cb(struct nfsd4_callback *cb)
+/**
+ * nfsd4_run_cb - queue up a callback job to run
+ * @cb: callback to queue
+ *
+ * Kick off a callback to do its thing. Returns false if it was already
+ * on a queue, true otherwise.
+ */
+bool nfsd4_run_cb(struct nfsd4_callback *cb)
 {
 	struct nfs4_client *clp = cb->cb_clp;
+	bool queued;
 
 	nfsd41_cb_inflight_begin(clp);
-	if (!nfsd4_queue_cb(cb))
+	queued = nfsd4_queue_cb(cb);
+	if (!queued)
 		nfsd41_cb_inflight_end(clp);
+	return queued;
 }

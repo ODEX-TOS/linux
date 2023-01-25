@@ -951,7 +951,7 @@ static int vmci_transport_recv_listen(struct sock *sk,
 	 * for ourself or any previous connection requests that we received.
 	 * If it's the latter, we try to find a socket in our list of pending
 	 * connections and, if we do, call the appropriate handler for the
-	 * state that that socket is in.  Otherwise we try to service the
+	 * state that socket is in.  Otherwise we try to service the
 	 * connection request.
 	 */
 	pending = vmci_transport_get_pending(sk, pkt);
@@ -1711,7 +1711,11 @@ static int vmci_transport_dgram_enqueue(
 	if (!dg)
 		return -ENOMEM;
 
-	memcpy_from_msg(VMCI_DG_PAYLOAD(dg), msg, len);
+	err = memcpy_from_msg(VMCI_DG_PAYLOAD(dg), msg, len);
+	if (err) {
+		kfree(dg);
+		return err;
+	}
 
 	dg->dst = vmci_make_handle(remote_addr->svm_cid,
 				   remote_addr->svm_port);

@@ -2125,7 +2125,7 @@ static int hclgevf_config_gro(struct hclgevf_dev *hdev)
 	struct hclge_desc desc;
 	int ret;
 
-	if (!hnae3_dev_gro_supported(hdev))
+	if (!hnae3_ae_dev_gro_supported(hdev->ae_dev))
 		return 0;
 
 	hclgevf_cmd_setup_basic_desc(&desc, HCLGE_OPC_GRO_GENERIC_CONFIG,
@@ -2767,7 +2767,8 @@ static int hclgevf_pci_reset(struct hclgevf_dev *hdev)
 	struct pci_dev *pdev = hdev->pdev;
 	int ret = 0;
 
-	if (hdev->reset_type == HNAE3_VF_FULL_RESET &&
+	if ((hdev->reset_type == HNAE3_VF_FULL_RESET ||
+	     hdev->reset_type == HNAE3_FLR_RESET) &&
 	    test_bit(HCLGEVF_STATE_IRQ_INITED, &hdev->state)) {
 		hclgevf_misc_irq_uninit(hdev);
 		hclgevf_uninit_msi(hdev);
@@ -3129,7 +3130,7 @@ static int hclgevf_set_channels(struct hnae3_handle *handle, u32 new_tqps_num,
 
 	hclgevf_update_rss_size(handle, new_tqps_num);
 
-	hclge_comm_get_rss_tc_info(cur_rss_size, hdev->hw_tc_map,
+	hclge_comm_get_rss_tc_info(kinfo->rss_size, hdev->hw_tc_map,
 				   tc_offset, tc_valid, tc_size);
 	ret = hclge_comm_set_rss_tc_mode(&hdev->hw.hw, tc_offset,
 					 tc_valid, tc_size);
@@ -3177,7 +3178,7 @@ static int hclgevf_get_status(struct hnae3_handle *handle)
 
 static void hclgevf_get_ksettings_an_result(struct hnae3_handle *handle,
 					    u8 *auto_neg, u32 *speed,
-					    u8 *duplex)
+					    u8 *duplex, u32 *lane_num)
 {
 	struct hclgevf_dev *hdev = hclgevf_ae_get_hdev(handle);
 
@@ -3429,7 +3430,7 @@ static struct hnae3_ae_algo ae_algovf = {
 	.pdev_id_table = ae_algovf_pci_tbl,
 };
 
-static int hclgevf_init(void)
+static int __init hclgevf_init(void)
 {
 	pr_info("%s is initializing\n", HCLGEVF_NAME);
 
@@ -3444,7 +3445,7 @@ static int hclgevf_init(void)
 	return 0;
 }
 
-static void hclgevf_exit(void)
+static void __exit hclgevf_exit(void)
 {
 	hnae3_unregister_ae_algo(&ae_algovf);
 	destroy_workqueue(hclgevf_wq);

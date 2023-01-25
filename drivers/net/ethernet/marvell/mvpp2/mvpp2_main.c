@@ -5425,11 +5425,11 @@ mvpp2_ethtool_get_coalesce(struct net_device *dev,
 static void mvpp2_ethtool_get_drvinfo(struct net_device *dev,
 				      struct ethtool_drvinfo *drvinfo)
 {
-	strlcpy(drvinfo->driver, MVPP2_DRIVER_NAME,
+	strscpy(drvinfo->driver, MVPP2_DRIVER_NAME,
 		sizeof(drvinfo->driver));
-	strlcpy(drvinfo->version, MVPP2_DRIVER_VERSION,
+	strscpy(drvinfo->version, MVPP2_DRIVER_VERSION,
 		sizeof(drvinfo->version));
-	strlcpy(drvinfo->bus_info, dev_name(&dev->dev),
+	strscpy(drvinfo->bus_info, dev_name(&dev->dev),
 		sizeof(drvinfo->bus_info));
 }
 
@@ -5770,8 +5770,7 @@ static int mvpp2_simple_queue_vectors_init(struct mvpp2_port *port,
 	v->irq = irq_of_parse_and_map(port_node, 0);
 	if (v->irq <= 0)
 		return -EINVAL;
-	netif_napi_add(port->dev, &v->napi, mvpp2_poll,
-		       NAPI_POLL_WEIGHT);
+	netif_napi_add(port->dev, &v->napi, mvpp2_poll);
 
 	port->nqvecs = 1;
 
@@ -5831,8 +5830,7 @@ static int mvpp2_multi_queue_vectors_init(struct mvpp2_port *port,
 			goto err;
 		}
 
-		netif_napi_add(port->dev, &v->napi, mvpp2_poll,
-			       NAPI_POLL_WEIGHT);
+		netif_napi_add(port->dev, &v->napi, mvpp2_poll);
 	}
 
 	return 0;
@@ -7352,6 +7350,7 @@ static int mvpp2_get_sram(struct platform_device *pdev,
 			  struct mvpp2 *priv)
 {
 	struct resource *res;
+	void __iomem *base;
 
 	res = platform_get_resource(pdev, IORESOURCE_MEM, 2);
 	if (!res) {
@@ -7362,9 +7361,12 @@ static int mvpp2_get_sram(struct platform_device *pdev,
 		return 0;
 	}
 
-	priv->cm3_base = devm_ioremap_resource(&pdev->dev, res);
+	base = devm_ioremap_resource(&pdev->dev, res);
+	if (IS_ERR(base))
+		return PTR_ERR(base);
 
-	return PTR_ERR_OR_ZERO(priv->cm3_base);
+	priv->cm3_base = base;
+	return 0;
 }
 
 static int mvpp2_probe(struct platform_device *pdev)

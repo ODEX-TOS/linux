@@ -17,7 +17,9 @@
 #include "util/record.h"
 #include <traceevent/event-parse.h>
 #include <api/fs/tracing_path.h>
+#ifdef HAVE_LIBBPF_SUPPORT
 #include <bpf/bpf.h>
+#endif
 #include "util/bpf_map.h"
 #include "util/rlimit.h"
 #include "builtin.h"
@@ -88,6 +90,8 @@
 # define F_LINUX_SPECIFIC_BASE	1024
 #endif
 
+#define RAW_SYSCALL_ARGS_NUM	6
+
 /*
  * strtoul: Go from a string to a value, i.e. for msr: MSR_FS_BASE to 0xc0000100
  */
@@ -108,7 +112,7 @@ struct syscall_fmt {
 		const char *sys_enter,
 			   *sys_exit;
 	}	   bpf_prog_name;
-	struct syscall_arg_fmt arg[6];
+	struct syscall_arg_fmt arg[RAW_SYSCALL_ARGS_NUM];
 	u8	   nr_args;
 	bool	   errpid;
 	bool	   timeout;
@@ -615,11 +619,8 @@ bool strarray__strtoul_flags(struct strarray *sa, char *bf, size_t size, u64 *re
 		if (isalpha(*tok) || *tok == '_') {
 			if (!strarray__strtoul(sa, tok, toklen, &val))
 				return false;
-		} else {
-			bool is_hexa = tok[0] == 0 && (tok[1] = 'x' || tok[1] == 'X');
-
-			val = strtoul(tok, NULL, is_hexa ? 16 : 0);
-		}
+		} else
+			val = strtoul(tok, NULL, 0);
 
 		*ret |= (1 << (val - 1));
 
@@ -1229,7 +1230,7 @@ struct syscall {
  */
 struct bpf_map_syscall_entry {
 	bool	enabled;
-	u16	string_args_len[6];
+	u16	string_args_len[RAW_SYSCALL_ARGS_NUM];
 };
 
 /*
@@ -1661,7 +1662,7 @@ static int syscall__alloc_arg_fmts(struct syscall *sc, int nr_args)
 {
 	int idx;
 
-	if (nr_args == 6 && sc->fmt && sc->fmt->nr_args != 0)
+	if (nr_args == RAW_SYSCALL_ARGS_NUM && sc->fmt && sc->fmt->nr_args != 0)
 		nr_args = sc->fmt->nr_args;
 
 	sc->arg_fmt = calloc(nr_args, sizeof(*sc->arg_fmt));
@@ -1794,11 +1795,11 @@ static int trace__read_syscall_info(struct trace *trace, int id)
 #endif
 	sc = trace->syscalls.table + id;
 	if (sc->nonexistent)
-		return 0;
+		return -EEXIST;
 
 	if (name == NULL) {
 		sc->nonexistent = true;
-		return 0;
+		return -EEXIST;
 	}
 
 	sc->name = name;
@@ -1812,11 +1813,18 @@ static int trace__read_syscall_info(struct trace *trace, int id)
 		sc->tp_format = trace_event__tp_format("syscalls", tp_name);
 	}
 
-	if (syscall__alloc_arg_fmts(sc, IS_ERR(sc->tp_format) ? 6 : sc->tp_format->format.nr_fields))
-		return -ENOMEM;
-
-	if (IS_ERR(sc->tp_format))
+	/*
+	 * Fails to read trace point format via sysfs node, so the trace point
+	 * doesn't exist.  Set the 'nonexistent' flag as true.
+	 */
+	if (IS_ERR(sc->tp_format)) {
+		sc->nonexistent = true;
 		return PTR_ERR(sc->tp_format);
+	}
+
+	if (syscall__alloc_arg_fmts(sc, IS_ERR(sc->tp_format) ?
+					RAW_SYSCALL_ARGS_NUM : sc->tp_format->format.nr_fields))
+		return -ENOMEM;
 
 	sc->args = sc->tp_format->format.fields;
 	/*
@@ -2134,11 +2142,8 @@ static struct syscall *trace__syscall_info(struct trace *trace,
 	    (err = trace__read_syscall_info(trace, id)) != 0)
 		goto out_cant_read;
 
-	if (trace->syscalls.table[id].name == NULL) {
-		if (trace->syscalls.table[id].nonexistent)
-			return NULL;
+	if (trace->syscalls.table && trace->syscalls.table[id].nonexistent)
 		goto out_cant_read;
-	}
 
 	return &trace->syscalls.table[id];
 
@@ -2173,13 +2178,10 @@ static void thread__update_stats(struct thread *thread, struct thread_trace *ttr
 
 	stats = inode->priv;
 	if (stats == NULL) {
-		stats = malloc(sizeof(*stats));
+		stats = zalloc(sizeof(*stats));
 		if (stats == NULL)
 			return;
 
-		stats->nr_failures = 0;
-		stats->max_errno   = 0;
-		stats->errnos	   = NULL;
 		init_stats(&stats->stats);
 		inode->priv = stats;
 	}
@@ -2762,11 +2764,7 @@ static size_t trace__fprintf_tp_fields(struct trace *trace, struct evsel *evsel,
 
 		printed += scnprintf(bf + printed, size - printed, "%s", printed ? ", " : "");
 
-		/*
-		 * XXX Perhaps we should have a show_tp_arg_names,
-		 * leaving show_arg_names just for syscalls?
-		 */
-		if (1 || trace->show_arg_names)
+		if (trace->show_arg_names)
 			printed += scnprintf(bf + printed, size - printed, "%s: ", field->name);
 
 		printed += syscall_arg_fmt__scnprintf_val(arg, bf + printed, size - printed, &syscall_arg, val);

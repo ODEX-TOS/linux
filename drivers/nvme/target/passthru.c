@@ -245,14 +245,15 @@ static void nvmet_passthru_execute_cmd_work(struct work_struct *w)
 		nvme_passthru_end(ctrl, effects, req->cmd, status);
 }
 
-static void nvmet_passthru_req_done(struct request *rq,
-				    blk_status_t blk_status)
+static enum rq_end_io_ret nvmet_passthru_req_done(struct request *rq,
+						  blk_status_t blk_status)
 {
 	struct nvmet_req *req = rq->end_io_data;
 
 	req->cqe->result = nvme_req(rq)->result;
 	nvmet_req_complete(req, nvme_req(rq)->status);
 	blk_mq_free_request(rq);
+	return RQ_END_IO_NONE;
 }
 
 static int nvmet_passthru_map_sg(struct nvmet_req *req, struct request *rq)
@@ -333,14 +334,13 @@ static void nvmet_passthru_execute_cmd(struct nvmet_req *req)
 	}
 
 	/*
-	 * If there are effects for the command we are about to execute, or
-	 * an end_req function we need to use nvme_execute_passthru_rq()
-	 * synchronously in a work item seeing the end_req function and
-	 * nvme_passthru_end() can't be called in the request done callback
-	 * which is typically in interrupt context.
+	 * If a command needs post-execution fixups, or there are any
+	 * non-trivial effects, make sure to execute the command synchronously
+	 * in a workqueue so that nvme_passthru_end gets called.
 	 */
 	effects = nvme_command_effects(ctrl, ns, req->cmd->common.opcode);
-	if (req->p.use_workqueue || effects) {
+	if (req->p.use_workqueue ||
+	    (effects & ~(NVME_CMD_EFFECTS_CSUPP | NVME_CMD_EFFECTS_LBCC))) {
 		INIT_WORK(&req->p.work, nvmet_passthru_execute_cmd_work);
 		req->p.rq = rq;
 		queue_work(nvmet_wq, &req->p.work);

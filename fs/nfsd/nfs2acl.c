@@ -246,7 +246,6 @@ nfsaclsvc_encode_getaclres(struct svc_rqst *rqstp, struct xdr_stream *xdr)
 	struct nfsd3_getaclres *resp = rqstp->rq_resp;
 	struct dentry *dentry = resp->fh.fh_dentry;
 	struct inode *inode;
-	int w;
 
 	if (!svcxdr_encode_stat(xdr, resp->status))
 		return false;
@@ -259,15 +258,6 @@ nfsaclsvc_encode_getaclres(struct svc_rqst *rqstp, struct xdr_stream *xdr)
 		return false;
 	if (xdr_stream_encode_u32(xdr, resp->mask) < 0)
 		return false;
-
-	rqstp->rq_res.page_len = w = nfsacl_size(
-		(resp->mask & NFS_ACL)   ? resp->acl_access  : NULL,
-		(resp->mask & NFS_DFACL) ? resp->acl_default : NULL);
-	while (w > 0) {
-		if (!*(rqstp->rq_next_page++))
-			return true;
-		w -= PAGE_SIZE;
-	}
 
 	if (!nfs_stream_encode_acl(xdr, inode, resp->acl_access,
 				   resp->mask & NFS_ACL, 0))
@@ -331,6 +321,7 @@ static const struct svc_procedure nfsd_acl_procedures2[5] = {
 		.pc_decode = nfssvc_decode_voidarg,
 		.pc_encode = nfssvc_encode_voidres,
 		.pc_argsize = sizeof(struct nfsd_voidargs),
+		.pc_argzero = sizeof(struct nfsd_voidargs),
 		.pc_ressize = sizeof(struct nfsd_voidres),
 		.pc_cachetype = RC_NOCACHE,
 		.pc_xdrressize = ST,
@@ -342,6 +333,7 @@ static const struct svc_procedure nfsd_acl_procedures2[5] = {
 		.pc_encode = nfsaclsvc_encode_getaclres,
 		.pc_release = nfsaclsvc_release_getacl,
 		.pc_argsize = sizeof(struct nfsd3_getaclargs),
+		.pc_argzero = sizeof(struct nfsd3_getaclargs),
 		.pc_ressize = sizeof(struct nfsd3_getaclres),
 		.pc_cachetype = RC_NOCACHE,
 		.pc_xdrressize = ST+1+2*(1+ACL),
@@ -353,6 +345,7 @@ static const struct svc_procedure nfsd_acl_procedures2[5] = {
 		.pc_encode = nfssvc_encode_attrstatres,
 		.pc_release = nfssvc_release_attrstat,
 		.pc_argsize = sizeof(struct nfsd3_setaclargs),
+		.pc_argzero = sizeof(struct nfsd3_setaclargs),
 		.pc_ressize = sizeof(struct nfsd_attrstat),
 		.pc_cachetype = RC_NOCACHE,
 		.pc_xdrressize = ST+AT,
@@ -364,6 +357,7 @@ static const struct svc_procedure nfsd_acl_procedures2[5] = {
 		.pc_encode = nfssvc_encode_attrstatres,
 		.pc_release = nfssvc_release_attrstat,
 		.pc_argsize = sizeof(struct nfsd_fhandle),
+		.pc_argzero = sizeof(struct nfsd_fhandle),
 		.pc_ressize = sizeof(struct nfsd_attrstat),
 		.pc_cachetype = RC_NOCACHE,
 		.pc_xdrressize = ST+AT,
@@ -375,6 +369,7 @@ static const struct svc_procedure nfsd_acl_procedures2[5] = {
 		.pc_encode = nfsaclsvc_encode_accessres,
 		.pc_release = nfsaclsvc_release_access,
 		.pc_argsize = sizeof(struct nfsd3_accessargs),
+		.pc_argzero = sizeof(struct nfsd3_accessargs),
 		.pc_ressize = sizeof(struct nfsd3_accessres),
 		.pc_cachetype = RC_NOCACHE,
 		.pc_xdrressize = ST+AT+1,

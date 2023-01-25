@@ -27,11 +27,6 @@
 #define	VPPS_VALID_MIN_MV			100
 #define	VSINKDISCONNECT_PD_MIN_PERCENT		90
 
-#define tcpc_presenting_rd(reg, cc) \
-	(!(TCPC_ROLE_CTRL_DRP & (reg)) && \
-	 (((reg) & (TCPC_ROLE_CTRL_## cc ##_MASK << TCPC_ROLE_CTRL_## cc ##_SHIFT)) == \
-	  (TCPC_ROLE_CTRL_CC_RD << TCPC_ROLE_CTRL_## cc ##_SHIFT)))
-
 struct tcpci {
 	struct device *dev;
 
@@ -216,23 +211,6 @@ static int tcpci_start_toggling(struct tcpc_dev *tcpc,
 		return ret;
 	return regmap_write(tcpci->regmap, TCPC_COMMAND,
 			    TCPC_CMD_LOOK4CONNECTION);
-}
-
-static enum typec_cc_status tcpci_to_typec_cc(unsigned int cc, bool sink)
-{
-	switch (cc) {
-	case 0x1:
-		return sink ? TYPEC_CC_RP_DEF : TYPEC_CC_RA;
-	case 0x2:
-		return sink ? TYPEC_CC_RP_1_5 : TYPEC_CC_RD;
-	case 0x3:
-		if (sink)
-			return TYPEC_CC_RP_3_0;
-		fallthrough;
-	case 0x0:
-	default:
-		return TYPEC_CC_OPEN;
-	}
 }
 
 static int tcpci_get_cc(struct tcpc_dev *tcpc,
@@ -816,8 +794,10 @@ struct tcpci *tcpci_register_port(struct device *dev, struct tcpci_data *data)
 		return ERR_PTR(err);
 
 	tcpci->port = tcpm_register_port(tcpci->dev, &tcpci->tcpc);
-	if (IS_ERR(tcpci->port))
+	if (IS_ERR(tcpci->port)) {
+		fwnode_handle_put(tcpci->tcpc.fwnode);
 		return ERR_CAST(tcpci->port);
+	}
 
 	return tcpci;
 }
@@ -826,6 +806,7 @@ EXPORT_SYMBOL_GPL(tcpci_register_port);
 void tcpci_unregister_port(struct tcpci *tcpci)
 {
 	tcpm_unregister_port(tcpci->port);
+	fwnode_handle_put(tcpci->tcpc.fwnode);
 }
 EXPORT_SYMBOL_GPL(tcpci_unregister_port);
 
@@ -868,7 +849,7 @@ static int tcpci_probe(struct i2c_client *client,
 	return 0;
 }
 
-static int tcpci_remove(struct i2c_client *client)
+static void tcpci_remove(struct i2c_client *client)
 {
 	struct tcpci_chip *chip = i2c_get_clientdata(client);
 	int err;
@@ -879,8 +860,6 @@ static int tcpci_remove(struct i2c_client *client)
 		dev_warn(&client->dev, "Failed to disable irqs (%pe)\n", ERR_PTR(err));
 
 	tcpci_unregister_port(chip->tcpci);
-
-	return 0;
 }
 
 static const struct i2c_device_id tcpci_id[] = {

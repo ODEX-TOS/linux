@@ -792,7 +792,7 @@ static int bpf_exec_tx_verdict(struct sk_msg *msg, struct sock *sk,
 	struct sk_psock *psock;
 	struct sock *sk_redir;
 	struct tls_rec *rec;
-	bool enospc, policy;
+	bool enospc, policy, redir_ingress;
 	int err = 0, send;
 	u32 delta = 0;
 
@@ -837,6 +837,7 @@ more_data:
 		}
 		break;
 	case __SK_REDIRECT:
+		redir_ingress = psock->redir_ingress;
 		sk_redir = psock->sk_redir;
 		memcpy(&msg_redir, msg, sizeof(*msg));
 		if (msg->apply_bytes < send)
@@ -846,7 +847,8 @@ more_data:
 		sk_msg_return_zero(sk, msg, send);
 		msg->sg.size -= send;
 		release_sock(sk);
-		err = tcp_bpf_sendmsg_redir(sk_redir, &msg_redir, send, flags);
+		err = tcp_bpf_sendmsg_redir(sk_redir, redir_ingress,
+					    &msg_redir, send, flags);
 		lock_sock(sk);
 		if (err < 0) {
 			*copied -= sk_msg_free_nocharge(sk, &msg_redir);
@@ -2627,6 +2629,40 @@ int tls_set_sw_offload(struct sock *sk, struct tls_context *ctx, int tx)
 		salt = sm4_ccm_info->salt;
 		salt_size = TLS_CIPHER_SM4_CCM_SALT_SIZE;
 		cipher_name = "ccm(sm4)";
+		break;
+	}
+	case TLS_CIPHER_ARIA_GCM_128: {
+		struct tls12_crypto_info_aria_gcm_128 *aria_gcm_128_info;
+
+		aria_gcm_128_info = (void *)crypto_info;
+		nonce_size = TLS_CIPHER_ARIA_GCM_128_IV_SIZE;
+		tag_size = TLS_CIPHER_ARIA_GCM_128_TAG_SIZE;
+		iv_size = TLS_CIPHER_ARIA_GCM_128_IV_SIZE;
+		iv = aria_gcm_128_info->iv;
+		rec_seq_size = TLS_CIPHER_ARIA_GCM_128_REC_SEQ_SIZE;
+		rec_seq = aria_gcm_128_info->rec_seq;
+		keysize = TLS_CIPHER_ARIA_GCM_128_KEY_SIZE;
+		key = aria_gcm_128_info->key;
+		salt = aria_gcm_128_info->salt;
+		salt_size = TLS_CIPHER_ARIA_GCM_128_SALT_SIZE;
+		cipher_name = "gcm(aria)";
+		break;
+	}
+	case TLS_CIPHER_ARIA_GCM_256: {
+		struct tls12_crypto_info_aria_gcm_256 *gcm_256_info;
+
+		gcm_256_info = (void *)crypto_info;
+		nonce_size = TLS_CIPHER_ARIA_GCM_256_IV_SIZE;
+		tag_size = TLS_CIPHER_ARIA_GCM_256_TAG_SIZE;
+		iv_size = TLS_CIPHER_ARIA_GCM_256_IV_SIZE;
+		iv = gcm_256_info->iv;
+		rec_seq_size = TLS_CIPHER_ARIA_GCM_256_REC_SEQ_SIZE;
+		rec_seq = gcm_256_info->rec_seq;
+		keysize = TLS_CIPHER_ARIA_GCM_256_KEY_SIZE;
+		key = gcm_256_info->key;
+		salt = gcm_256_info->salt;
+		salt_size = TLS_CIPHER_ARIA_GCM_256_SALT_SIZE;
+		cipher_name = "gcm(aria)";
 		break;
 	}
 	default:

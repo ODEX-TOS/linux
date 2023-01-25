@@ -569,6 +569,14 @@ static int decode_listxattrs(struct xdr_stream *xdr,
 		 */
 		if (status == -ETOOSMALL)
 			status = -ERANGE;
+		/*
+		 * Special case: for LISTXATTRS, NFS4ERR_NOXATTR
+		 * should be translated to success with zero-length reply.
+		 */
+		if (status == -ENODATA) {
+			res->eof = true;
+			status = 0;
+		}
 		goto out;
 	}
 
@@ -1134,7 +1142,7 @@ static int decode_read_plus(struct xdr_stream *xdr, struct nfs_pgio_res *res)
 	if (!segs)
 		return -ENOMEM;
 
-	xdr_set_scratch_buffer(xdr, &scratch_buf, 32);
+	xdr_set_scratch_buffer(xdr, &scratch_buf, sizeof(scratch_buf));
 	status = -EIO;
 	for (i = 0; i < segments; i++) {
 		status = decode_read_plus_segment(xdr, &segs[i]);

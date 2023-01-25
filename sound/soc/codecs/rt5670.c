@@ -3311,8 +3311,6 @@ static int rt5670_i2c_probe(struct i2c_client *i2c)
 	if (ret < 0)
 		goto err;
 
-	pm_runtime_put(&i2c->dev);
-
 	return 0;
 err:
 	pm_runtime_disable(&i2c->dev);
@@ -3320,11 +3318,9 @@ err:
 	return ret;
 }
 
-static int rt5670_i2c_remove(struct i2c_client *i2c)
+static void rt5670_i2c_remove(struct i2c_client *i2c)
 {
 	pm_runtime_disable(&i2c->dev);
-
-	return 0;
 }
 
 static struct i2c_driver rt5670_i2c_driver = {
