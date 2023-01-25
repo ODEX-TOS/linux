@@ -1752,8 +1752,6 @@ static void ufx_usb_disconnect(struct usb_interface *interface)
 
 	mutex_lock(&disconnect_mutex);
 
-	mutex_lock(&disconnect_mutex);
-
 	dev = usb_get_intfdata(interface);
 	info = dev->info;
 

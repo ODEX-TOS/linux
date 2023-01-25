@@ -279,10 +279,6 @@
 	ddc-i2c-bus = <&i2c2>;
 };
 
-&hdmi {
-	ddc-i2c-bus = <&i2c2>;
-};
-
 &i2c_intern {
 	pmic@8 {
 		compatible = "fsl,pfuze100";

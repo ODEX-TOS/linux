@@ -2535,9 +2535,6 @@ static int at91_adc_suspend(struct device *dev)
 	if (iio_buffer_enabled(indio_dev))
 		at91_adc_buffer_postdisable(indio_dev);
 
-	if (iio_buffer_enabled(indio_dev))
-		at91_adc_buffer_postdisable(indio_dev);
-
 	/*
 	 * Do a sofware reset of the ADC before we go to suspend.
 	 * this will ensure that all pins are free from being muxed by the ADC

@@ -1748,7 +1748,6 @@ out_sysctl:
 	retire_mq_sysctls(&init_ipc_ns);
 out_kmem:
 	kmem_cache_destroy(mqueue_inode_cachep);
-	retire_mq_sysctls(&init_ipc_ns);
 	return error;
 }
 
