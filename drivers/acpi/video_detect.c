@@ -110,26 +110,6 @@ static bool nvidia_wmi_ec_supported(void)
 }
 #endif
 
-static bool apple_gmux_backlight_present(void)
-{
-	struct acpi_device *adev;
-	struct device *dev;
-
-	adev = acpi_dev_get_first_match_dev(GMUX_ACPI_HID, NULL, -1);
-	if (!adev)
-		return false;
-
-	dev = acpi_get_first_physical_node(adev);
-	if (!dev)
-		return false;
-
-	/*
-	 * drivers/platform/x86/apple-gmux.c only supports old style
-	 * Apple GMUX with an IO-resource.
-	 */
-	return pnp_get_resource(to_pnp_dev(dev), IORESOURCE_IO, 0) != NULL;
-}
-
 /* Force to use vendor driver when the ACPI device is known to be
  * buggy */
 static int video_detect_force_vendor(const struct dmi_system_id *d)

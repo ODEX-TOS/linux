@@ -206,9 +206,6 @@ static int mpfs_ccc_register_plls(struct device *dev, struct mpfs_ccc_pll_hw_clo
 		if (!pll_hw->name)
 			return -ENOMEM;
 
-		if (!name)
-			return -ENOMEM;
-
 		pll_hw->base = data->pll_base[i];
 		pll_hw->hw.init = CLK_HW_INIT_PARENTS_DATA_FIXED_SIZE(pll_hw->name,
 								      pll_hw->parents,

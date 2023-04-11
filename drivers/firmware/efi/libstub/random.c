@@ -98,19 +98,6 @@ efi_status_t efi_random_get_seed(void)
 	}
 
 	/*
-	 * Check whether a seed was provided by a prior boot stage. In that
-	 * case, instead of overwriting it, let's create a new buffer that can
-	 * hold both, and concatenate the existing and the new seeds.
-	 * Note that we should read the seed size with caution, in case the
-	 * table got corrupted in memory somehow.
-	 */
-	prev_seed = get_efi_config_table(LINUX_EFI_RANDOM_SEED_TABLE_GUID);
-	if (prev_seed && prev_seed->size <= 512U) {
-		prev_seed_size = prev_seed->size;
-		seed_size += prev_seed_size;
-	}
-
-	/*
 	 * Use EFI_ACPI_RECLAIM_MEMORY here so that it is guaranteed that the
 	 * allocation will survive a kexec reboot (although we refresh the seed
 	 * beforehand)

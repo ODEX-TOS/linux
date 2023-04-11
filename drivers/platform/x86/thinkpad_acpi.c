@@ -10534,7 +10534,6 @@ static void dytc_profile_refresh(void)
 	if (err)
 		return;
 
-	funcmode = (output >> DYTC_GET_FUNCTION_BIT) & 0xF;
 	perfmode = (output >> DYTC_GET_MODE_BIT) & 0xF;
 	convert_dytc_to_profile(funcmode, perfmode, &profile);
 	if (profile != dytc_current_profile) {

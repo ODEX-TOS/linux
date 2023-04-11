@@ -82,9 +82,6 @@ static void rk_ahash_reg_init(struct ahash_request *req,
 			      struct rk_crypto_info *dev)
 {
 	struct rk_ahash_rctx *rctx = ahash_request_ctx(req);
-	struct crypto_ahash *tfm = crypto_ahash_reqtfm(req);
-	struct rk_ahash_ctx *tctx = crypto_ahash_ctx(tfm);
-	struct rk_crypto_info *dev = tctx->dev;
 	int reg_status;
 
 	reg_status = CRYPTO_READ(dev, RK_CRYPTO_CTRL) |
@@ -204,9 +201,6 @@ static int rk_ahash_digest(struct ahash_request *req)
 	struct rk_ahash_rctx *rctx = ahash_request_ctx(req);
 	struct rk_crypto_info *dev;
 	struct crypto_engine *engine;
-
-	if (rk_ahash_need_fallback(req))
-		return rk_ahash_digest_fb(req);
 
 	if (rk_ahash_need_fallback(req))
 		return rk_ahash_digest_fb(req);

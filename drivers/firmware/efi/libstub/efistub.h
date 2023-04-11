@@ -939,8 +939,6 @@ efi_status_t efi_random_alloc(unsigned long size, unsigned long align,
 
 efi_status_t efi_random_get_seed(void);
 
-efi_status_t efi_random_get_seed(void);
-
 efi_status_t check_platform_features(void);
 
 void *get_efi_config_table(efi_guid_t guid);

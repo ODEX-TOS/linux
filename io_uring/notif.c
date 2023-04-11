@@ -21,10 +21,6 @@ static void io_notif_complete_tw_ext(struct io_kiocb *notif, bool *locked)
 		__io_unaccount_mem(ctx->user, nd->account_pages);
 		nd->account_pages = 0;
 	}
-
-	if (nd->zc_report && (nd->zc_copied || !nd->zc_used))
-		notif->cqe.res |= IORING_NOTIF_USAGE_ZC_COPIED;
-
 	io_req_task_complete(notif, locked);
 }
 

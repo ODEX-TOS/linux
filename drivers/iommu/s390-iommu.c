@@ -103,31 +103,6 @@ static void __s390_iommu_detach_device(struct zpci_dev *zdev)
 	zdev->dma_table = NULL;
 }
 
-static void __s390_iommu_detach_device(struct zpci_dev *zdev)
-{
-	struct s390_domain *s390_domain = zdev->s390_domain;
-	struct s390_domain_device *domain_device, *tmp;
-	unsigned long flags;
-
-	if (!s390_domain)
-		return;
-
-	spin_lock_irqsave(&s390_domain->list_lock, flags);
-	list_for_each_entry_safe(domain_device, tmp, &s390_domain->devices,
-				 list) {
-		if (domain_device->zdev == zdev) {
-			list_del(&domain_device->list);
-			kfree(domain_device);
-			break;
-		}
-	}
-	spin_unlock_irqrestore(&s390_domain->list_lock, flags);
-
-	zpci_unregister_ioat(zdev, 0);
-	zdev->s390_domain = NULL;
-	zdev->dma_table = NULL;
-}
-
 static int s390_iommu_attach_device(struct iommu_domain *domain,
 				    struct device *dev)
 {

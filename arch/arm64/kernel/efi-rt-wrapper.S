@@ -17,12 +17,6 @@ SYM_FUNC_START(__efi_rt_asm_wrapper)
 	 */
 	stp	x1, x18, [sp, #16]
 
-	ldr_l	x16, efi_rt_stack_top
-	mov	sp, x16
-#ifdef CONFIG_SHADOW_CALL_STACK
-	str	x18, [sp, #-16]!
-#endif
-
 	/*
 	 * Preserve all callee saved registers and preserve the stack pointer
 	 * value at the base of the EFI runtime stack so we can recover from

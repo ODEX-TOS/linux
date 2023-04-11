@@ -747,6 +747,7 @@ static void __snd_dma_sg_fallback_free(struct snd_dma_buffer *dmab,
 		}
 	}
 	kvfree(sgbuf->pages);
+	kvfree(sgbuf->addrs);
 	kfree(sgbuf);
 }
 
