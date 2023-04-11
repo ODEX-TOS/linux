@@ -614,7 +614,7 @@ void trace_buffer_unlock_commit_nostack(struct trace_buffer *buffer,
 bool trace_is_tracepoint_string(const char *str);
 const char *trace_event_format(struct trace_iterator *iter, const char *fmt);
 void trace_check_vprintf(struct trace_iterator *iter, const char *fmt,
-			 va_list ap);
+			 va_list ap) __printf(2, 0);
 
 int trace_empty(struct trace_iterator *iter);
 
@@ -1282,6 +1282,7 @@ struct ftrace_event_field {
 	int			offset;
 	int			size;
 	int			is_signed;
+	int			len;
 };
 
 struct prog_entry;
@@ -1490,6 +1491,7 @@ extern void trace_event_enable_cmd_record(bool enable);
 extern void trace_event_enable_tgid_record(bool enable);
 
 extern int event_trace_init(void);
+extern int init_events(void);
 extern int event_trace_add_tracer(struct dentry *parent, struct trace_array *tr);
 extern int event_trace_del_tracer(struct trace_array *tr);
 extern void __trace_early_add_events(struct trace_array *tr);
@@ -1939,8 +1941,6 @@ void tracer_hardirqs_off(unsigned long a0, unsigned long a1);
 static inline void tracer_hardirqs_on(unsigned long a0, unsigned long a1) { }
 static inline void tracer_hardirqs_off(unsigned long a0, unsigned long a1) { }
 #endif
-
-extern struct trace_iterator *tracepoint_print_iter;
 
 /*
  * Reset the state of the trace_iterator so that it can read consumed data.

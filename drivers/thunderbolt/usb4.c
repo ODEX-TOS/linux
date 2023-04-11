@@ -155,6 +155,8 @@ static inline int usb4_switch_op_data(struct tb_switch *sw, u16 opcode,
 
 static void usb4_switch_check_wakes(struct tb_switch *sw)
 {
+	bool wakeup_usb4 = false;
+	struct usb4_port *usb4;
 	struct tb_port *port;
 	bool wakeup = false;
 	u32 val;
@@ -173,20 +175,31 @@ static void usb4_switch_check_wakes(struct tb_switch *sw)
 		wakeup = val & (ROUTER_CS_6_WOPS | ROUTER_CS_6_WOUS);
 	}
 
-	/* Check for any connected downstream ports for USB4 wake */
+	/*
+	 * Check for any downstream ports for USB4 wake,
+	 * connection wake and disconnection wake.
+	 */
 	tb_switch_for_each_port(sw, port) {
-		if (!tb_port_has_remote(port))
+		if (!port->cap_usb4)
 			continue;
 
 		if (tb_port_read(port, &val, TB_CFG_PORT,
 				 port->cap_usb4 + PORT_CS_18, 1))
 			break;
 
-		tb_port_dbg(port, "USB4 wake: %s\n",
-			    (val & PORT_CS_18_WOU4S) ? "yes" : "no");
+		tb_port_dbg(port, "USB4 wake: %s, connection wake: %s, disconnection wake: %s\n",
+			    (val & PORT_CS_18_WOU4S) ? "yes" : "no",
+			    (val & PORT_CS_18_WOCS) ? "yes" : "no",
+			    (val & PORT_CS_18_WODS) ? "yes" : "no");
 
-		if (val & PORT_CS_18_WOU4S)
-			wakeup = true;
+		wakeup_usb4 = val & (PORT_CS_18_WOU4S | PORT_CS_18_WOCS |
+				     PORT_CS_18_WODS);
+
+		usb4 = port->usb4;
+		if (device_may_wakeup(&usb4->dev) && wakeup_usb4)
+			pm_wakeup_event(&usb4->dev, 0);
+
+		wakeup |= wakeup_usb4;
 	}
 
 	if (wakeup)
@@ -366,6 +379,7 @@ bool usb4_switch_lane_bonding_possible(struct tb_switch *sw)
  */
 int usb4_switch_set_wake(struct tb_switch *sw, unsigned int flags)
 {
+	struct usb4_port *usb4;
 	struct tb_port *port;
 	u64 route = tb_route(sw);
 	u32 val;
@@ -395,10 +409,13 @@ int usb4_switch_set_wake(struct tb_switch *sw, unsigned int flags)
 			val |= PORT_CS_19_WOU4;
 		} else {
 			bool configured = val & PORT_CS_19_PC;
+			usb4 = port->usb4;
 
-			if ((flags & TB_WAKE_ON_CONNECT) && !configured)
+			if (((flags & TB_WAKE_ON_CONNECT) |
+			      device_may_wakeup(&usb4->dev)) && !configured)
 				val |= PORT_CS_19_WOC;
-			if ((flags & TB_WAKE_ON_DISCONNECT) && configured)
+			if (((flags & TB_WAKE_ON_DISCONNECT) |
+			      device_may_wakeup(&usb4->dev)) && configured)
 				val |= PORT_CS_19_WOD;
 			if ((flags & TB_WAKE_ON_USB4) && configured)
 				val |= PORT_CS_19_WOU4;
@@ -1562,6 +1579,20 @@ int usb4_port_retimer_set_inbound_sbtx(struct tb_port *port, u8 index)
 }
 
 /**
+ * usb4_port_retimer_unset_inbound_sbtx() - Disable sideband channel transactions
+ * @port: USB4 port
+ * @index: Retimer index
+ *
+ * Disables sideband channel transations on SBTX. The reverse of
+ * usb4_port_retimer_set_inbound_sbtx().
+ */
+int usb4_port_retimer_unset_inbound_sbtx(struct tb_port *port, u8 index)
+{
+	return usb4_port_retimer_op(port, index,
+				    USB4_SB_OPCODE_UNSET_INBOUND_SBTX, 500);
+}
+
+/**
  * usb4_port_retimer_read() - Read from retimer sideband registers
  * @port: USB4 port
  * @index: Retimer index
@@ -2050,17 +2081,29 @@ static int usb4_usb3_port_write_allocated_bandwidth(struct tb_port *port,
 						    int downstream_bw)
 {
 	u32 val, ubw, dbw, scale;
-	int ret;
+	int ret, max_bw;
 
-	/* Read the used scale, hardware default is 0 */
-	ret = tb_port_read(port, &scale, TB_CFG_PORT,
-			   port->cap_adap + ADP_USB3_CS_3, 1);
+	/* Figure out suitable scale */
+	scale = 0;
+	max_bw = max(upstream_bw, downstream_bw);
+	while (scale < 64) {
+		if (mbps_to_usb3_bw(max_bw, scale) < 4096)
+			break;
+		scale++;
+	}
+
+	if (WARN_ON(scale >= 64))
+		return -EINVAL;
+
+	ret = tb_port_write(port, &scale, TB_CFG_PORT,
+			    port->cap_adap + ADP_USB3_CS_3, 1);
 	if (ret)
 		return ret;
 
-	scale &= ADP_USB3_CS_3_SCALE_MASK;
 	ubw = mbps_to_usb3_bw(upstream_bw, scale);
 	dbw = mbps_to_usb3_bw(downstream_bw, scale);
+
+	tb_port_dbg(port, "scaled bandwidth %u/%u, scale %u\n", ubw, dbw, scale);
 
 	ret = tb_port_read(port, &val, TB_CFG_PORT,
 			   port->cap_adap + ADP_USB3_CS_2, 1);

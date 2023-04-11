@@ -29,8 +29,8 @@ static void *efi_fb;
  */
 static int __init efi_earlycon_remap_fb(void)
 {
-	/* bail if there is no bootconsole or it has been disabled already */
-	if (!earlycon_console || !(earlycon_console->flags & CON_ENABLED))
+	/* bail if there is no bootconsole or it was unregistered already */
+	if (!earlycon_console || !console_is_registered(earlycon_console))
 		return 0;
 
 	efi_fb = memremap(fb_base, screen_info.lfb_size,
@@ -42,8 +42,8 @@ early_initcall(efi_earlycon_remap_fb);
 
 static int __init efi_earlycon_unmap_fb(void)
 {
-	/* unmap the bootconsole fb unless keep_bootcon has left it enabled */
-	if (efi_fb && !(earlycon_console->flags & CON_ENABLED))
+	/* unmap the bootconsole fb unless keep_bootcon left it registered */
+	if (efi_fb && !console_is_registered(earlycon_console))
 		memunmap(efi_fb);
 	return 0;
 }
@@ -204,6 +204,14 @@ efi_earlycon_write(struct console *con, const char *str, unsigned int num)
 	}
 }
 
+static bool __initdata fb_probed;
+
+void __init efi_earlycon_reprobe(void)
+{
+	if (fb_probed)
+		setup_earlycon("efifb");
+}
+
 static int __init efi_earlycon_setup(struct earlycon_device *device,
 				     const char *opt)
 {
@@ -211,14 +219,16 @@ static int __init efi_earlycon_setup(struct earlycon_device *device,
 	u16 xres, yres;
 	u32 i;
 
-	if (screen_info.orig_video_isVGA != VIDEO_TYPE_EFI)
+	fb_wb = opt && !strcmp(opt, "ram");
+
+	if (screen_info.orig_video_isVGA != VIDEO_TYPE_EFI) {
+		fb_probed = true;
 		return -ENODEV;
+	}
 
 	fb_base = screen_info.lfb_base;
 	if (screen_info.capabilities & VIDEO_CAPABILITY_64BIT_BASE)
 		fb_base |= (u64)screen_info.ext_lfb_base << 32;
-
-	fb_wb = opt && !strcmp(opt, "ram");
 
 	si = &screen_info;
 	xres = si->lfb_width;

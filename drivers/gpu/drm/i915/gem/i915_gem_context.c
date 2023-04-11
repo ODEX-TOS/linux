@@ -546,7 +546,7 @@ set_proto_ctx_engines_bond(struct i915_user_extension __user *base, void *data)
 	}
 
 	if (intel_engine_uses_guc(master)) {
-		DRM_DEBUG("bonding extension not supported with GuC submission");
+		drm_dbg(&i915->drm, "bonding extension not supported with GuC submission");
 		return -ENODEV;
 	}
 
@@ -1452,7 +1452,7 @@ static void engines_idle_release(struct i915_gem_context *ctx,
 		int err;
 
 		/* serialises with execbuf */
-		set_bit(CONTEXT_CLOSED_BIT, &ce->flags);
+		intel_context_close(ce);
 		if (!intel_context_pin_if_active(ce))
 			continue;
 
@@ -1861,11 +1861,19 @@ static int get_ppgtt(struct drm_i915_file_private *file_priv,
 	vm = ctx->vm;
 	GEM_BUG_ON(!vm);
 
-	err = xa_alloc(&file_priv->vm_xa, &id, vm, xa_limit_32b, GFP_KERNEL);
-	if (err)
-		return err;
-
+	/*
+	 * Get a reference for the allocated handle.  Once the handle is
+	 * visible in the vm_xa table, userspace could try to close it
+	 * from under our feet, so we need to hold the extra reference
+	 * first.
+	 */
 	i915_vm_get(vm);
+
+	err = xa_alloc(&file_priv->vm_xa, &id, vm, xa_limit_32b, GFP_KERNEL);
+	if (err) {
+		i915_vm_put(vm);
+		return err;
+	}
 
 	GEM_BUG_ON(id == 0); /* reserved for invalid/unassigned ppgtt */
 	args->value = id;
@@ -2310,7 +2318,6 @@ int i915_gem_context_create_ioctl(struct drm_device *dev, void *data,
 	}
 
 	args->ctx_id = id;
-	drm_dbg(&i915->drm, "HW context %d created\n", args->ctx_id);
 
 	return 0;
 

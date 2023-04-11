@@ -988,6 +988,22 @@ static void storvsc_handle_error(struct vmscsi_request *vm_srb,
 			}
 
 			/*
+			 * Check for "Operating parameters have changed"
+			 * due to Hyper-V changing the VHD/VHDX BlockSize
+			 * when adding/removing a differencing disk. This
+			 * causes discard_granularity to change, so do a
+			 * rescan to pick up the new granularity. We don't
+			 * want scsi_report_sense() to output a message
+			 * that a sysadmin wouldn't know what to do with.
+			 */
+			if ((asc == 0x3f) && (ascq != 0x03) &&
+					(ascq != 0x0e)) {
+				process_err_fn = storvsc_device_scan;
+				set_host_byte(scmnd, DID_REQUEUE);
+				goto do_work;
+			}
+
+			/*
 			 * Otherwise, let upper layer deal with the
 			 * error when sense message is present
 			 */
@@ -1651,13 +1667,13 @@ static int storvsc_host_reset_handler(struct scsi_cmnd *scmnd)
  * be unbounded on Azure.  Reset the timer unconditionally to give the host a
  * chance to perform EH.
  */
-static enum blk_eh_timer_return storvsc_eh_timed_out(struct scsi_cmnd *scmnd)
+static enum scsi_timeout_action storvsc_eh_timed_out(struct scsi_cmnd *scmnd)
 {
 #if IS_ENABLED(CONFIG_SCSI_FC_ATTRS)
 	if (scmnd->device->host->transportt == fc_transport_template)
 		return fc_eh_timed_out(scmnd);
 #endif
-	return BLK_EH_RESET_TIMER;
+	return SCSI_EH_RESET_TIMER;
 }
 
 static bool storvsc_scsi_cmd_ok(struct scsi_cmnd *scmnd)

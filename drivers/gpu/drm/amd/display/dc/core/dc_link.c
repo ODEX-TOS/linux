@@ -1016,6 +1016,7 @@ static bool detect_link_and_local_sink(struct dc_link *link,
 	struct dc_sink *prev_sink = NULL;
 	struct dpcd_caps prev_dpcd_caps;
 	enum dc_connection_type new_connection_type = dc_connection_none;
+	enum dc_connection_type pre_connection_type = link->type;
 	const uint32_t post_oui_delay = 30; // 30ms
 
 	DC_LOGGER_INIT(link->ctx->logger);
@@ -1118,6 +1119,8 @@ static bool detect_link_and_local_sink(struct dc_link *link,
 			}
 
 			if (!detect_dp(link, &sink_caps, reason)) {
+				link->type = pre_connection_type;
+
 				if (prev_sink)
 					dc_sink_release(prev_sink);
 				return false;
@@ -1349,6 +1352,8 @@ bool dc_link_detect(struct dc_link *link, enum dc_detect_reason reason)
 	bool is_delegated_to_mst_top_mgr = false;
 	enum dc_connection_type pre_link_type = link->type;
 
+	DC_LOGGER_INIT(link->ctx->logger);
+
 	is_local_sink_detect_success = detect_link_and_local_sink(link, reason);
 
 	if (is_local_sink_detect_success && link->local_sink)
@@ -1358,6 +1363,10 @@ bool dc_link_detect(struct dc_link *link, enum dc_detect_reason reason)
 			dc_is_dp_signal(link->local_sink->sink_signal) &&
 			link->dpcd_caps.is_mst_capable)
 		is_delegated_to_mst_top_mgr = discover_dp_mst_topology(link, reason);
+
+	DC_LOG_DC("%s: link_index=%d is_local_sink_detect_success=%d pre_link_type=%d link_type=%d\n", __func__,
+		 link->link_index, is_local_sink_detect_success, pre_link_type, link->type);
+
 
 	if (is_local_sink_detect_success &&
 			pre_link_type == dc_connection_mst_branch &&
@@ -1915,12 +1924,6 @@ struct dc_link *link_create(const struct link_init_data *init_params)
 
 	if (false == dc_link_construct(link, init_params))
 		goto construct_fail;
-
-	/*
-	 * Must use preferred_link_setting, not reported_link_cap or verified_link_cap,
-	 * since struct preferred_link_setting won't be reset after S3.
-	 */
-	link->preferred_link_setting.dpcd_source_device_specific_field_support = true;
 
 	return link;
 
@@ -3378,7 +3381,7 @@ bool dc_link_setup_psr(struct dc_link *link,
 		case FAMILY_YELLOW_CARP:
 		case AMDGPU_FAMILY_GC_10_3_6:
 		case AMDGPU_FAMILY_GC_11_0_1:
-			if (dc->debug.disable_z10)
+			if (dc->debug.disable_z10 || dc->debug.psr_skip_crtc_disable)
 				psr_context->psr_level.bits.SKIP_CRTC_DISABLE = true;
 			break;
 		default:
@@ -4239,6 +4242,7 @@ static void fpga_dp_hpo_enable_link_and_stream(struct dc_state *state, struct pi
 		link_hwss->ext.set_throttled_vcp_size(pipe_ctx, avg_time_slots_per_mtp);
 
 	dc->hwss.unblank_stream(pipe_ctx, &stream->link->cur_link_settings);
+	dc->hwss.enable_audio_stream(pipe_ctx);
 }
 
 void core_link_enable_stream(
@@ -4318,10 +4322,7 @@ void core_link_enable_stream(
 			/* Still enable stream features & audio on seamless boot for DP external displays */
 			if (pipe_ctx->stream->signal == SIGNAL_TYPE_DISPLAY_PORT) {
 				enable_stream_features(pipe_ctx);
-				if (pipe_ctx->stream_res.audio != NULL) {
-					pipe_ctx->stream_res.stream_enc->funcs->dp_audio_enable(pipe_ctx->stream_res.stream_enc);
-					dc->hwss.enable_audio_stream(pipe_ctx);
-				}
+				dc->hwss.enable_audio_stream(pipe_ctx);
 			}
 
 #if defined(CONFIG_DRM_AMD_DC_HDCP)
@@ -4674,6 +4675,10 @@ void dc_link_set_preferred_training_settings(struct dc *dc,
 		link->preferred_link_setting.lane_count = LANE_COUNT_UNKNOWN;
 		link->preferred_link_setting.link_rate = LINK_RATE_UNKNOWN;
 	}
+
+	if (link->connector_signal == SIGNAL_TYPE_DISPLAY_PORT &&
+			link->type == dc_connection_mst_branch)
+		dm_helpers_dp_mst_update_branch_bandwidth(dc->ctx, link);
 
 	/* Retrain now, or wait until next stream update to apply */
 	if (skip_immediate_retrain == false)
